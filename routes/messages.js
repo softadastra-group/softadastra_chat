@@ -25,17 +25,17 @@ router.get("/:senderId/:receiverId", async (req, res) => {
     }
 
     const [messages] = await pool.query(
-      `SELECT id, sender_id, content, image_urls, seen, created_at 
+      `SELECT id, sender_id, content, image_urls, seen, created_at, product_id 
        FROM chat_messages 
        WHERE thread_id = ? 
        ORDER BY created_at ASC`,
       [thread.id]
     );
 
-    // 🔄 Parser les champs JSON (image_urls)
     const formatted = messages.map((msg) => ({
       ...msg,
       image_urls: msg.image_urls ? JSON.parse(msg.image_urls) : [],
+      extra_data: msg.product_id ? { product_id: msg.product_id } : undefined,
     }));
 
     return res.json({ thread_id: thread.id, messages: formatted });
