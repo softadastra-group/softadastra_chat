@@ -1,0 +1,20 @@
+# Fichiers sensibles
+.env
+
+# Node.js
+node_modules/
+package-lock.json
+
+# Dossiers et fichiers générés
+db/
+ws/
+
+# Fichiers de build ou de logs
+*.log
+*.out
+
+# IDE/Editeurs (si applicable)
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
