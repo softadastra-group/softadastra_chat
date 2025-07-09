@@ -1,4 +1,3 @@
-// routes/messages.js
 const express = require("express");
 const router = express.Router();
 const pool = require("../db/mysql");
@@ -26,14 +25,20 @@ router.get("/:senderId/:receiverId", async (req, res) => {
     }
 
     const [messages] = await pool.query(
-      `SELECT id, sender_id, content, created_at 
+      `SELECT id, sender_id, content, image_urls, seen, created_at 
        FROM chat_messages 
        WHERE thread_id = ? 
        ORDER BY created_at ASC`,
       [thread.id]
     );
 
-    return res.json({ thread_id: thread.id, messages });
+    // 🔄 Parser les champs JSON (image_urls)
+    const formatted = messages.map((msg) => ({
+      ...msg,
+      image_urls: msg.image_urls ? JSON.parse(msg.image_urls) : [],
+    }));
+
+    return res.json({ thread_id: thread.id, messages: formatted });
   } catch (err) {
     console.error("Erreur chargement messages :", err.message);
     res.status(500).json({ error: "Erreur serveur" });

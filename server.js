@@ -1,7 +1,8 @@
 const express = require("express");
 const http = require("http");
 const WebSocket = require("ws");
-const cors = require("cors"); // ✅ Ajouté
+const cors = require("cors");
+const path = require("path"); // ✅ AJOUT ICI
 require("dotenv").config();
 
 const app = express();
@@ -14,6 +15,10 @@ app.use(cors());
 // ✅ Route REST pour charger les anciens messages
 const messagesRoute = require("./routes/messages");
 app.use("/api/messages", messagesRoute);
+
+const uploadRoute = require("./routes/upload");
+app.use(uploadRoute);
+app.use("/uploads", express.static(path.join(__dirname, "public/uploads")));
 
 // WebSocket logic
 require("./ws/chat")(wss);
