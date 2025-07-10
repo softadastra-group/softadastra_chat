@@ -122,7 +122,7 @@ router.get("/:senderId/:receiverId", async (req, res) => {
     }
 
     const [messages] = await pool.query(
-      `SELECT id, sender_id, content, image_urls, seen, created_at, product_id 
+      `SELECT id, sender_id, content, image_urls, seen, created_at,deleted, product_id 
        FROM chat_messages 
        WHERE thread_id = ? 
        ORDER BY created_at ASC`,
@@ -138,6 +138,35 @@ router.get("/:senderId/:receiverId", async (req, res) => {
     return res.json({ thread_id: thread.id, messages: formatted });
   } catch (err) {
     console.error("Erreur chargement messages :", err.message);
+    res.status(500).json({ error: "Erreur serveur" });
+  }
+});
+
+// 🧹 Supprime le contenu du message (soft delete)
+router.delete("/delete/:messageId", async (req, res) => {
+  const messageId = req.params.messageId;
+  const userId = req.query.user_id;
+
+  try {
+    // Vérifie que le message appartient bien à l'utilisateur
+    const [rows] = await pool.query(
+      "SELECT * FROM chat_messages WHERE id = ? AND sender_id = ?",
+      [messageId, userId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(403).json({ error: "Unauthorized" });
+    }
+
+    // Met à jour le message comme supprimé
+    await pool.query(
+      "UPDATE chat_messages SET content = NULL, deleted = 1 WHERE id = ?",
+      [messageId]
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Erreur suppression message:", err);
     res.status(500).json({ error: "Erreur serveur" });
   }
 });
