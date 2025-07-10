@@ -27,6 +27,77 @@ router.get("/unread/:userId", async (req, res) => {
     res.status(500).json({ error: "Erreur serveur" });
   }
 });
+router.get("/last-message/:userId", async (req, res) => {
+  const userId = parseInt(req.params.userId);
+  if (!userId) return res.status(400).json({ error: "ID invalide" });
+
+  try {
+    const [rows] = await pool.query(
+      `
+      SELECT 
+        t.id AS thread_id,
+        CASE 
+          WHEN t.user1_id = ? THEN t.user2_id
+          ELSE t.user1_id
+        END AS other_user_id,
+        m.content AS body,
+        m.created_at AS last_date
+      FROM chat_threads t
+      JOIN chat_messages m ON m.thread_id = t.id
+      WHERE t.user1_id = ? OR t.user2_id = ?
+      AND m.created_at = (
+        SELECT MAX(created_at)
+        FROM chat_messages
+        WHERE thread_id = t.id
+      )
+      ORDER BY m.created_at DESC
+      `,
+      [userId, userId, userId]
+    );
+
+    res.json({ messages: rows });
+  } catch (err) {
+    console.error("Erreur récupération derniers messages:", err.message);
+    res.status(500).json({ error: "Erreur serveur" });
+  }
+});
+
+// ✅ Route API à ajouter dans routes/messages.js
+router.get("/unread-count/:userId", async (req, res) => {
+  const userId = parseInt(req.params.userId);
+
+  try {
+    const [rows] = await pool.query(
+      `SELECT 
+          CASE 
+            WHEN t.user1_id = ? THEN t.user2_id
+            ELSE t.user1_id
+          END AS sender_id,
+          COUNT(*) AS unread_count
+       FROM chat_messages m
+       JOIN chat_threads t ON m.thread_id = t.id
+       WHERE 
+         (
+           (t.user1_id = ? AND m.sender_id = t.user2_id)
+           OR 
+           (t.user2_id = ? AND m.sender_id = t.user1_id)
+         )
+         AND m.seen = FALSE
+       GROUP BY sender_id`,
+      [userId, userId, userId]
+    );
+
+    const map = {};
+    rows.forEach((row) => {
+      map[row.sender_id] = row.unread_count;
+    });
+
+    res.json({ unreadByUser: map });
+  } catch (err) {
+    console.error("Erreur unread-count:", err.message);
+    res.status(500).json({ error: "Erreur serveur" });
+  }
+});
 
 // GET /api/messages/:senderId/:receiverId
 router.get("/:senderId/:receiverId", async (req, res) => {

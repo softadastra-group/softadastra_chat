@@ -23,6 +23,9 @@ app.use("/uploads", express.static(path.join(__dirname, "public/uploads")));
 const notificationsRoutes = require("./routes/notifications");
 app.use("/api/notifications", notificationsRoutes);
 
+const statusRoutes = require("./routes/status");
+app.use("/api/status", statusRoutes);
+
 // WebSocket logic
 require("./ws/chat")(wss);
 
