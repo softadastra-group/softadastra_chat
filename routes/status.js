@@ -1,14 +1,14 @@
 const express = require("express");
 const router = express.Router();
-const redis = require("../db/redis");
 
-router.get("/online-status", async (req, res) => {
+const { connectedUsers } = require("../ws/userState");
+
+router.get("/online-status", (req, res) => {
   try {
-    const keys = await redis.keys("user:*:online"); // user:123:online
-    const onlineUserIds = keys.map((key) => key.split(":")[1]);
+    const onlineUserIds = Array.from(connectedUsers.keys());
     res.json(onlineUserIds);
   } catch (e) {
-    res.status(500).json({ error: "Erreur Redis" });
+    res.status(500).json({ error: "Erreur interne" });
   }
 });
 

@@ -2,17 +2,15 @@ const express = require("express");
 const http = require("http");
 const WebSocket = require("ws");
 const cors = require("cors");
-const path = require("path"); // ✅ AJOUT ICI
+const path = require("path");
 require("dotenv").config();
 
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-// ✅ Middleware CORS pour accepter les requêtes venant du frontend PHP
 app.use(cors());
 
-// ✅ Route REST pour charger les anciens messages
 const messagesRoute = require("./routes/messages");
 app.use("/api/messages", messagesRoute);
 
@@ -26,11 +24,31 @@ app.use("/api/notifications", notificationsRoutes);
 const statusRoutes = require("./routes/status");
 app.use("/api/status", statusRoutes);
 
-// WebSocket logic
 require("./ws/chat")(wss);
 
-// Démarrage du serveur
 const PORT = process.env.PORT || 3000;
+
+const fs = require("fs");
+
+app.get("/", (req, res) => {
+  res.json({
+    message: "Hello from Softadastra Node.js API!",
+    time: new Date().toISOString(),
+  });
+});
+
+app.get("/test", (req, res) => {
+  res.send(`
+    <html>
+      <head><title>Test Node</title></head>
+      <body>
+        <h1>✅ Serveur Node.js opérationnel</h1>
+        <p>Date actuelle : ${new Date().toLocaleString()}</p>
+      </body>
+    </html>
+  `);
+});
+
 server.listen(PORT, () => {
   console.log(`✅ Serveur WebSocket lancé sur ws://localhost:${PORT}`);
 });

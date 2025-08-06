@@ -1,9 +1,0 @@
-npm install express ws mysql2 dotenv
-npm install cors
-npm install multer
-npm install ioredis
-
-
-const API_URL = "https://chat.softadastra.com"; // ou localhost en dev
-img.src = `${API_URL}${msg.image_url}`;
-

@@ -1,6 +1,6 @@
 const pool = require("../db/mysql");
 
-// 📥 Créer une nouvelle notification
+// Créer une nouvelle notification
 async function createNotification({
   user_id,
   title,
@@ -15,7 +15,7 @@ async function createNotification({
   );
 }
 
-// 📤 Récupérer les notifications non lues d'un utilisateur
+// Récupérer les notifications non lues d'un utilisateur
 async function getUnreadNotifications(userId) {
   const [rows] = await pool.query(
     `SELECT id, title, body, type, related_id, created_at
@@ -27,14 +27,14 @@ async function getUnreadNotifications(userId) {
   return rows;
 }
 
-// ✅ Marquer une notification comme lue
+// Marquer une notification comme lue
 async function markAsRead(notifId) {
   await pool.query(`UPDATE notifications SET is_read = TRUE WHERE id = ?`, [
     notifId,
   ]);
 }
 
-// ✅ Marquer toutes les notifications comme lues pour un utilisateur
+// Marquer toutes les notifications comme lues pour un utilisateur
 async function markAllAsRead(userId) {
   await pool.query(
     `UPDATE notifications SET is_read = TRUE WHERE user_id = ?`,

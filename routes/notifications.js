@@ -8,7 +8,7 @@ const {
   markAllAsRead,
 } = require("../utils/notifications");
 
-// 🔹 GET : Notifications non lues d'un utilisateur
+// GET : Notifications non lues d'un utilisateur
 router.get("/:userId", async (req, res) => {
   try {
     const userId = parseInt(req.params.userId);
@@ -17,12 +17,12 @@ router.get("/:userId", async (req, res) => {
     const notifications = await getUnreadNotifications(userId);
     res.json({ notifications });
   } catch (error) {
-    console.error("❌ Erreur get notifications :", error);
+    console.error("Erreur get notifications :", error);
     res.status(500).json({ error: "Erreur serveur" });
   }
 });
 
-// 🔹 POST : Marquer une seule notification comme lue
+// POST : Marquer une seule notification comme lue
 router.post("/read/:notifId", async (req, res) => {
   try {
     const notifId = parseInt(req.params.notifId);
@@ -31,12 +31,12 @@ router.post("/read/:notifId", async (req, res) => {
     await markAsRead(notifId);
     res.json({ success: true });
   } catch (error) {
-    console.error("❌ Erreur markAsRead :", error);
+    console.error("Erreur markAsRead :", error);
     res.status(500).json({ error: "Erreur serveur" });
   }
 });
 
-// 🔹 POST : Marquer toutes les notifications comme lues
+// POST : Marquer toutes les notifications comme lues
 router.post("/read-all/:userId", async (req, res) => {
   try {
     const userId = parseInt(req.params.userId);
@@ -45,12 +45,12 @@ router.post("/read-all/:userId", async (req, res) => {
     await markAllAsRead(userId);
     res.json({ success: true });
   } catch (error) {
-    console.error("❌ Erreur markAllAsRead :", error);
+    console.error("Erreur markAllAsRead :", error);
     res.status(500).json({ error: "Erreur serveur" });
   }
 });
 
-// 📜 Récupérer l’historique des notifications (plus complet)
+// Récupérer l’historique des notifications (plus complet)
 router.get("/history/:userId", async (req, res) => {
   const userId = parseInt(req.params.userId);
   const page = parseInt(req.query.page) || 1;
@@ -73,7 +73,7 @@ router.get("/history/:userId", async (req, res) => {
   }
 });
 
-// 🔴 Suppression d'une notification
+// Suppression d'une notification
 router.delete("/delete/:notifId", async (req, res) => {
   const notifId = parseInt(req.params.notifId);
   if (isNaN(notifId)) return res.status(400).json({ error: "ID invalide" });

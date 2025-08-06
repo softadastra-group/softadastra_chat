@@ -2,11 +2,50 @@ const express = require("express");
 const router = express.Router();
 const pool = require("../db/mysql");
 
-// ✅ DOIT ÊTRE EN PREMIER
+router.get("/test-db", async (req, res) => {
+  try {
+    const [rows] = await pool.query("SELECT 1 + 1 AS result");
+    res.json({
+      success: true,
+      message: "Connexion à la base MySQL réussie 🎉",
+      result: rows[0].result,
+    });
+  } catch (err) {
+    console.error("❌ Erreur connexion MySQL :", err);
+    res.status(500).json({
+      success: false,
+      message: "Erreur de connexion à la base de données",
+      error: {
+        message: err.message,
+        code: err.code,
+        errno: err.errno,
+        host: process.env.DB_HOST,
+        user: process.env.DB_USER,
+      },
+    });
+  }
+});
+
+router.get("/test-connection", async (req, res) => {
+  try {
+    const connection = await pool.getConnection();
+    await connection.ping();
+    res.json({ success: true, message: "Connexion MySQL réussie 🎉" });
+    connection.release();
+  } catch (err) {
+    console.error("❌ Erreur ping MySQL :", err.message);
+    res.status(500).json({
+      success: false,
+      message: "Échec connexion MySQL",
+      error: err.message,
+    });
+  }
+});
+
 router.get("/unread/:userId", async (req, res) => {
   const userId = parseInt(req.params.userId);
   if (isNaN(userId) || userId <= 0) {
-    return res.status(400).json({ error: "ID utilisateur invalide" });
+    return res.status(400).json({ error: "Invalid user ID" });
   }
 
   try {
@@ -62,7 +101,7 @@ router.get("/last-message/:userId", async (req, res) => {
   }
 });
 
-// ✅ Route API à ajouter dans routes/messages.js
+// Route API à ajouter dans routes/messages.js
 router.get("/unread-count/:userId", async (req, res) => {
   const userId = parseInt(req.params.userId);
 
@@ -142,7 +181,7 @@ router.get("/:senderId/:receiverId", async (req, res) => {
   }
 });
 
-// 🧹 Supprime le contenu du message (soft delete)
+// Supprime le contenu du message (soft delete)
 router.delete("/delete/:messageId", async (req, res) => {
   const messageId = req.params.messageId;
   const userId = req.query.user_id;

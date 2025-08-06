@@ -5,11 +5,10 @@ const fs = require("fs");
 
 const router = express.Router();
 
-// 📁 Dossier de stockage
 const uploadPath = path.join(__dirname, "../public/uploads");
 if (!fs.existsSync(uploadPath)) fs.mkdirSync(uploadPath, { recursive: true });
 
-// 🎒 Multer config
+// Multer config
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadPath),
   filename: (req, file, cb) => {
@@ -20,15 +19,15 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
-// ✅ Nouvelle route : upload de plusieurs images
+// Nouvelle route : upload de plusieurs images
 router.post("/api/chat/upload", upload.array("images[]"), (req, res) => {
   if (!req.files || req.files.length === 0) {
-    return res.status(400).json({ error: "Aucune image reçue" });
+    return res.status(400).json({ error: "No image received." });
   }
 
   // Génère les URLs accessibles
   const imageUrls = req.files.map((file) => `/uploads/${file.filename}`);
-  res.json({ image_urls: imageUrls }); // ⚠️ tableau ici
+  res.json({ image_urls: imageUrls });
 });
 
 module.exports = router;

@@ -18,3 +18,8 @@ ws/
 .idea/
 *.sublime-project
 *.sublime-workspace
+
+
+cmd.txt
+public/
+architecture
