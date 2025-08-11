@@ -5,29 +5,43 @@ const http = require("http");
 const WebSocket = require("ws");
 const cors = require("cors");
 const path = require("path");
-const cookieParser = require("cookie-parser"); // ✅ après require('express'), avant les routes
+const cookieParser = require("cookie-parser");
+const compression = require("compression");
+// const morgan = require("morgan");
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
 
-// ✅ Middlewares globaux (dans cet ordre)
+// ====== WebSocket ======
+const wss = new WebSocket.Server({ server }); // ws://HOST:PORT
+require("./ws/index")(wss); // gestion WS (subscribe/unsubscribe + heartbeat)
+
+// ====== Middlewares globaux (ordre important) ======
+// ====== Middlewares globaux (ordre important) ======
 app.use(
   cors({
-    origin: ["http://localhost:8000", "http://127.0.0.1:8000"], // ⬅️ ton front
+    origin: [
+      "http://localhost:8000",
+      "http://127.0.0.1:8000",
+      // ajoute tes domaines prod ici
+    ],
     credentials: true,
+    allowedHeaders: ["Content-Type", "Authorization"], // ⬅ important pour mode 'header'
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], // ⬅ pour être sûr
   })
 );
-app.use(express.json());
-app.use(cookieParser());
 
-// ---------------- Routes existantes ----------------
+app.use(express.json({ limit: "2mb" }));
+app.use(cookieParser());
+app.use(compression());
+
+// ====== Fichiers statiques (uploads, etc.) ======
+app.use("/uploads", express.static(path.join(__dirname, "public/uploads")));
+
+// ====== Routes API ======
+// Exemple: messages/notifications/status si tu les as déjà
 const messagesRoute = require("./routes/messages");
 app.use("/api/messages", messagesRoute);
-
-const uploadRoute = require("./routes/upload");
-app.use(uploadRoute);
-app.use("/uploads", express.static(path.join(__dirname, "public/uploads")));
 
 const notificationsRoutes = require("./routes/notifications");
 app.use("/api/notifications", notificationsRoutes);
@@ -35,16 +49,11 @@ app.use("/api/notifications", notificationsRoutes);
 const statusRoutes = require("./routes/status");
 app.use("/api/status", statusRoutes);
 
-// ✅ Likes (utilise utils/auth-phpjwt côté route)
+// ✅ Likes (en temps réel via WS)
 const likesRoutes = require("./routes/likes");
-app.use("/api", likesRoutes);
+app.use("/api", likesRoutes(wss)); // ⬅ injection du wss
 
-// ---------------- WebSocket ----------------
-require("./ws/chat")(wss);
-
-// ---------------- Healthcheck ----------------
-const PORT = process.env.PORT || 3000;
-
+// ====== Healthcheck & test ======
 app.get("/", (req, res) => {
   res.json({
     message: "Hello from Softadastra Node.js API!",
@@ -59,6 +68,34 @@ app.get("/test", (req, res) => {
   </body></html>`);
 });
 
+// ====== Démarrage HTTP + WS ======
+const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`✅ Serveur WebSocket lancé sur ws://localhost:${PORT}`);
+  console.log(`✅ HTTP OK sur http://localhost:${PORT}`);
+  console.log(`✅ WebSocket OK sur ws://localhost:${PORT}`);
 });
+
+// ====== Arrêt propre ======
+function shutdown(signal) {
+  console.log(`\n${signal} reçu, arrêt…`);
+  // Stopper les nouvelles connexions HTTP
+  server.close(() => {
+    console.log("HTTP fermé.");
+    // Fermer WS
+    try {
+      wss.clients.forEach((ws) => ws.terminate());
+      wss.close(() => {
+        console.log("WS fermé.");
+        process.exit(0);
+      });
+    } catch (e) {
+      process.exit(0);
+    }
+  });
+
+  // garde-fou si ça traîne
+  setTimeout(() => process.exit(0), 5000).unref();
+}
+
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
