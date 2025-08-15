@@ -7,39 +7,27 @@ const cors = require("cors");
 const path = require("path");
 const cookieParser = require("cookie-parser");
 const compression = require("compression");
-// const morgan = require("morgan");
 
 const app = express();
 const server = http.createServer(app);
 
-// ====== WebSocket ======
-const wss = new WebSocket.Server({ server }); // ws://HOST:PORT
-require("./ws/index")(wss); // gestion WS (subscribe/unsubscribe + heartbeat)
-
-// ====== Middlewares globaux (ordre important) ======
-// ====== Middlewares globaux (ordre important) ======
+// ====== Middlewares globaux ======
 app.use(
   cors({
-    origin: [
-      "http://localhost:8000",
-      "http://127.0.0.1:8000",
-      // ajoute tes domaines prod ici
-    ],
+    origin: ["http://localhost:8000", "http://127.0.0.1:8000"], // + tes domaines prod
     credentials: true,
-    allowedHeaders: ["Content-Type", "Authorization"], // ⬅ important pour mode 'header'
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], // ⬅ pour être sûr
+    allowedHeaders: ["Content-Type", "Authorization"],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   })
 );
-
 app.use(express.json({ limit: "2mb" }));
 app.use(cookieParser());
 app.use(compression());
 
-// ====== Fichiers statiques (uploads, etc.) ======
+// ====== Fichiers statiques ======
 app.use("/uploads", express.static(path.join(__dirname, "public/uploads")));
 
 // ====== Routes API ======
-// Exemple: messages/notifications/status si tu les as déjà
 const messagesRoute = require("./routes/messages");
 app.use("/api/messages", messagesRoute);
 
@@ -49,11 +37,59 @@ app.use("/api/notifications", notificationsRoutes);
 const statusRoutes = require("./routes/status");
 app.use("/api/status", statusRoutes);
 
+// ====== WS (mode noServer) + upgrade manuel ======
+const wssLikes = new WebSocket.Server({ noServer: true });
+require("./ws/index")(wssLikes);
+
+const wssChat = new WebSocket.Server({ noServer: true });
+require("./ws/chat")(wssChat);
+
+// Logs utiles
+wssLikes.on("connection", () => console.log("🤝 WS likes connection OK"));
+wssChat.on("connection", () => console.log("🤝 WS chat connection OK"));
+
+// Router les upgrades selon l’URL
+server.on("upgrade", (req, socket, head) => {
+  console.log(
+    "🔁 HTTP upgrade =>",
+    req.url,
+    "Origin:",
+    req.headers.origin || "-"
+  );
+
+  // Sécurise la connexion upgrade uniquement
+  const u = req.url || "";
+  if (u === "/ws/likes" || u.startsWith("/ws/likes?")) {
+    wssLikes.handleUpgrade(req, socket, head, (ws) => {
+      wssLikes.emit("connection", ws, req);
+    });
+  } else if (u === "/ws/chat" || u.startsWith("/ws/chat?")) {
+    wssChat.handleUpgrade(req, socket, head, (ws) => {
+      wssChat.emit("connection", ws, req);
+    });
+  } else {
+    // Chemin inconnu → on refuse
+    try {
+      socket.destroy();
+    } catch {}
+  }
+});
+
+// server.js (ou routes/chatUpload.js)
+const multer = require("multer");
+const upload = multer({ dest: path.join(__dirname, "public/uploads") });
+
+app.post("/api/chat/upload", upload.array("images[]", 10), (req, res) => {
+  const urls = (req.files || []).map((f) => `/uploads/${f.filename}`);
+  res.json({ image_urls: urls });
+});
+
 // ✅ Likes (en temps réel via WS)
 const likesRoutes = require("./routes/likes");
-app.use("/api", likesRoutes(wss)); // ⬅ injection du wss
+// ⬇️ on injecte le bon WS (likes)
+app.use("/api", likesRoutes(wssLikes));
 
-// ====== Healthcheck & test ======
+// ====== Healthcheck ======
 app.get("/", (req, res) => {
   res.json({
     message: "Hello from Softadastra Node.js API!",
@@ -61,40 +97,37 @@ app.get("/", (req, res) => {
   });
 });
 
-app.get("/test", (req, res) => {
-  res.send(`<html><head><title>Test Node</title></head><body>
-    <h1>✅ Serveur Node.js opérationnel</h1>
-    <p>Date actuelle : ${new Date().toLocaleString()}</p>
-  </body></html>`);
-});
-
 // ====== Démarrage HTTP + WS ======
 const PORT = process.env.PORT || 3000;
+
 server.listen(PORT, () => {
-  console.log(`✅ HTTP OK sur http://localhost:${PORT}`);
-  console.log(`✅ WebSocket OK sur ws://localhost:${PORT}`);
+  console.log(`✅ HTTP OK  : http://localhost:${PORT}`);
+  console.log(`✅ WS Likes : ws://localhost:${PORT}/ws/likes`);
+  console.log(`✅ WS Chat  : ws://localhost:${PORT}/ws/chat`);
 });
 
 // ====== Arrêt propre ======
+function closeWSS(wss, label) {
+  try {
+    wss.clients.forEach((ws) => {
+      try {
+        ws.terminate();
+      } catch {}
+    });
+    wss.close(() => console.log(`${label} fermé.`));
+  } catch {}
+}
+
 function shutdown(signal) {
   console.log(`\n${signal} reçu, arrêt…`);
-  // Stopper les nouvelles connexions HTTP
+
   server.close(() => {
     console.log("HTTP fermé.");
-    // Fermer WS
-    try {
-      wss.clients.forEach((ws) => ws.terminate());
-      wss.close(() => {
-        console.log("WS fermé.");
-        process.exit(0);
-      });
-    } catch (e) {
-      process.exit(0);
-    }
+    closeWSS(wssLikes, "WS Likes");
+    closeWSS(wssChat, "WS Chat");
+    // garde-fou si un callback traîne
+    setTimeout(() => process.exit(0), 1500).unref();
   });
-
-  // garde-fou si ça traîne
-  setTimeout(() => process.exit(0), 5000).unref();
 }
 
 process.on("SIGINT", () => shutdown("SIGINT"));
