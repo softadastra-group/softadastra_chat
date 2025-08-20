@@ -15,15 +15,18 @@ const server = http.createServer(app);
 server.keepAliveTimeout = 1_000; // 1s
 server.headersTimeout = 5_000; // 5s (doit > keepAliveTimeout)
 
+const { authRequired } = require("./utils/auth-phpjwt"); // ✅ ajoute ceci
+
 // ====== Middlewares globaux ======
 app.use(
   cors({
     origin: ["http://localhost:8000", "http://127.0.0.1:8000"],
     credentials: true,
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: ["Content-Type", "Authorization", "x-user-id"], // + x-user-id
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   })
 );
+
 app.use(express.json({ limit: "2mb" }));
 app.use(cookieParser());
 app.use(compression());
@@ -50,6 +53,11 @@ app.use("/api/feed", feedRoutes);
 const debugJwtRoutes = require("./routes/debugJwt");
 app.use("/api", debugJwtRoutes);
 
+// ✅ AJOUTE ICI
+const uploadRoutes = require("./routes/upload");
+app.use("/api", uploadRoutes);
+
+// (garde le reste)
 const meRoute = require("./routes/me");
 app.use(meRoute);
 

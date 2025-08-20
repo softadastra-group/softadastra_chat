@@ -57,7 +57,7 @@ module.exports = (db) => {
     }
 
     /**
-     * Crée un post PHOTO SEULE (aucun body, 1..N images).
+     * Crée un post PHOTO (1..N images) avec texte optionnel.
      */
     async createPhotoPost({
       userId,
@@ -65,11 +65,16 @@ module.exports = (db) => {
       visibility = "public",
       replyToId = null,
       sizes = [],
+      body = null, // ✅ nouveau: texte optionnel
     }) {
       // sizes optionnel: [{width, height, mime_type}] aligné sur imageUrls
-      const urls = Array.isArray(imageUrls) ? imageUrls.filter((u) => !!u) : [];
-      if (!userId || urls.length === 0)
+      const urls = Array.isArray(imageUrls) ? imageUrls.filter(Boolean) : [];
+      if (!userId || urls.length === 0) {
         throw new Error("Invalid photo post payload");
+      }
+
+      // Normalise le texte (conserve null si vide)
+      const text = typeof body === "string" && body.trim() ? body.trim() : null;
 
       const conn = await db.getConnection();
       try {
@@ -77,9 +82,10 @@ module.exports = (db) => {
 
         const [res] = await conn.execute(
           `INSERT INTO feed_posts (user_id, body, visibility, reply_to_id, media_count)
-           VALUES (:user_id, NULL, :visibility, :reply_to_id, :mc)`,
+       VALUES (:user_id, :body, :visibility, :reply_to_id, :mc)`,
           {
             user_id: userId,
+            body: text, // ✅ enregistre le texte si présent
             visibility,
             reply_to_id: replyToId,
             mc: urls.length,
@@ -93,7 +99,7 @@ module.exports = (db) => {
           const meta = Array.isArray(sizes) && sizes[i] ? sizes[i] : {};
           await conn.execute(
             `INSERT INTO feed_post_media (post_id, url, mime_type, position, width, height)
-     VALUES (:post_id, :url, :mime_type, :position, :width, :height)`,
+         VALUES (:post_id, :url, :mime_type, :position, :width, :height)`,
             {
               post_id: postId,
               url,
