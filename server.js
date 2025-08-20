@@ -44,6 +44,9 @@ app.use("/api/status", statusRoutes);
 const shopLocationsRoutes = require("./routes/shopLocations");
 app.use("/api", shopLocationsRoutes);
 
+const feedRoutes = require("./routes/feed");
+app.use("/api/feed", feedRoutes);
+
 const debugJwtRoutes = require("./routes/debugJwt");
 app.use("/api", debugJwtRoutes);
 
@@ -62,13 +65,12 @@ const wssChat = new WebSocket.Server({
   perMessageDeflate: false,
 });
 
-// ⚠️ IMPORTANT : on récupère des fonctions de cleanup retournées par les modules WS
+// ⚠️ cleanup WS
 const initLikes = require("./ws/index");
 const initChat = require("./ws/chat");
 const cleanupLikes = initLikes(wssLikes) || (() => {});
 const cleanupChat = initChat(wssChat) || (() => {});
 
-// Logs utiles
 wssLikes.on("connection", () => console.log("🤝 WS likes connection OK"));
 wssChat.on("connection", () => console.log("🤝 WS chat connection OK"));
 
@@ -87,16 +89,15 @@ server.on("upgrade", (req, socket, head) => {
     "Origin:",
     req.headers.origin || "-"
   );
-
   const u = req.url || "";
   if (u === "/ws/likes" || u.startsWith("/ws/likes?")) {
-    wssLikes.handleUpgrade(req, socket, head, (ws) => {
-      wssLikes.emit("connection", ws, req);
-    });
+    wssLikes.handleUpgrade(req, socket, head, (ws) =>
+      wssLikes.emit("connection", ws, req)
+    );
   } else if (u === "/ws/chat" || u.startsWith("/ws/chat?")) {
-    wssChat.handleUpgrade(req, socket, head, (ws) => {
-      wssChat.emit("connection", ws, req);
-    });
+    wssChat.handleUpgrade(req, socket, head, (ws) =>
+      wssChat.emit("connection", ws, req)
+    );
   } else {
     try {
       socket.destroy();
@@ -104,10 +105,9 @@ server.on("upgrade", (req, socket, head) => {
   }
 });
 
-// server.js (ou routes/chatUpload.js)
+// Upload images (réutilisé par /api/feed/photo si besoin)
 const multer = require("multer");
 const upload = multer({ dest: path.join(__dirname, "public/uploads") });
-
 app.post("/api/chat/upload", upload.array("images[]", 10), (req, res) => {
   const urls = (req.files || []).map((f) => `/uploads/${f.filename}`);
   res.json({ image_urls: urls });
@@ -127,7 +127,6 @@ app.get("/", (req, res) => {
 
 // ====== Démarrage HTTP + WS ======
 const PORT = process.env.PORT || 3000;
-
 server.listen(PORT, () => {
   console.log(`✅ HTTP OK  : http://localhost:${PORT}`);
   console.log(`✅ WS Likes : ws://localhost:${PORT}/ws/likes`);
@@ -136,17 +135,13 @@ server.listen(PORT, () => {
 
 // ====== Arrêt propre ======
 let shuttingDown = false;
-
 function closeWSS(wss, label) {
   try {
-    // 1) Clôture douce des clients (close frame)
     wss.clients.forEach((ws) => {
       try {
         ws.close(1001, "server-shutdown");
       } catch {}
     });
-
-    // 2) Termine ceux qui traînent encore après un court délai
     setTimeout(() => {
       wss.clients.forEach((ws) => {
         try {
@@ -163,38 +158,25 @@ function closeWSS(wss, label) {
 function shutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
-
   console.log(`\n${signal} reçu, arrêt…`);
-
-  // Stopper les timers/intervals internes aux modules WS
   try {
     cleanupLikes();
   } catch {}
   try {
     cleanupChat();
   } catch {}
-
-  // Fermer les serveurs WS (close + terminate fallback)
   closeWSS(wssLikes, "WS Likes");
   closeWSS(wssChat, "WS Chat");
-
-  // Fermer l'HTTP server (arrête d'accepter les connexions)
   server.close(() => {
     console.log("HTTP fermé.");
-
-    // Détruire les sockets HTTP encore ouvertes (keep-alive)
     httpSockets.forEach((s) => {
       try {
         s.destroy();
       } catch {}
     });
     httpSockets.clear();
-
-    // garde-fou si un callback traîne
     setTimeout(() => process.exit(0), 800).unref();
   });
-
-  // Petite fenêtre pour laisser finir les requêtes, puis force
   setTimeout(() => {
     httpSockets.forEach((s) => {
       try {
@@ -206,3 +188,6 @@ function shutdown(signal) {
 
 process.on("SIGINT", () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));
+
+// ✅ Export APRÈS définition
+module.exports = { app, server };
