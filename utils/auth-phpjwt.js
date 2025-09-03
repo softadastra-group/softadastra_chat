@@ -1,3 +1,11 @@
+const TRUSTED_ORIGINS = (
+  process.env.ADMIN_TRUSTED_ORIGINS ||
+  "http://localhost:8000,http://127.0.0.1:8000"
+)
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
 // utils/auth-phpjwt.js
 const crypto = require("crypto");
 
@@ -63,28 +71,33 @@ function verifyPhpJwt(token, secret) {
 /* Middleware Express */
 function authRequired(req, res, next) {
   try {
-    // 1) header Authorization: Bearer ...
+    // 1) JWT
     let token = null;
     const h = req.headers.authorization || req.headers.Authorization;
-    if (h && /^Bearer\s+/i.test(h)) {
-      token = h.replace(/^Bearer\s+/i, "").trim();
+    if (h && /^Bearer\s+/i.test(h)) token = h.replace(/^Bearer\s+/i, "").trim();
+    if (!token && req.cookies && req.cookies.token) token = req.cookies.token;
+
+    if (token) {
+      const secret =
+        process.env.JWT_SECRET || process.env.SECRET || "change_me";
+      const payload = verifyPhpJwt(token, secret);
+      const userId = payload.id || payload.user_id || payload.userId;
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+      req.user = { id: Number(userId), payload };
+      return next();
     }
-    // 2) cookie 'token' en fallback (si utile)
-    if (!token && req.cookies && req.cookies.token) {
-      token = req.cookies.token;
+
+    // 2) Bridge dev/admin via x-user-id + Origin de confiance
+    const origin = String(req.headers.origin || req.headers.referer || "");
+    const trusted = TRUSTED_ORIGINS.some((base) => origin.startsWith(base));
+    const xuid = req.headers["x-user-id"];
+    if (trusted && xuid && /^\d+$/.test(String(xuid))) {
+      req.user = { id: Number(xuid), payload: { bridge: "x-user-id" } };
+      return next();
     }
-    if (!token) return res.status(401).json({ error: "Unauthorized" });
 
-    const secret = process.env.JWT_SECRET || process.env.SECRET || "change_me";
-    const payload = verifyPhpJwt(token, secret);
-
-    // adapte selon ton payload (ex: payload.id)
-    const userId = payload.id || payload.user_id || payload.userId;
-    if (!userId) return res.status(401).json({ error: "Unauthorized" });
-
-    req.user = { id: Number(userId), payload };
-    next();
-  } catch (err) {
+    return res.status(401).json({ error: "Unauthorized" });
+  } catch {
     return res.status(401).json({ error: "Unauthorized" });
   }
 }
