@@ -20,6 +20,7 @@ server.keepAliveTimeout = 1_000; // 1s
 server.headersTimeout = 5_000; // 5s (doit > keepAliveTimeout)
 
 // ====== Middlewares globaux ======
+
 app.use(
   cors({
     origin: ["http://localhost:8000", "http://127.0.0.1:8000"],
@@ -28,7 +29,6 @@ app.use(
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   })
 );
-
 app.use(express.json({ limit: "2mb" }));
 app.use(cookieParser());
 app.use(compression());
@@ -274,7 +274,10 @@ app.post("/api/chat/upload", upload.array("images[]", 10), (req, res) => {
 const likesRoutes = require("./routes/likes");
 app.use("/api", likesRoutes(wssLikes));
 
+app.use("/api", require('./routes/db'));
+
 // ====== Healthcheck ======
+app.get("/health",(req,res)=>res.json({ok:true}));
 app.get("/", (req, res) => {
   res.json({
     message: "Hello from Softadastra Node.js API!",
