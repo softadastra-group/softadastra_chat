@@ -144,13 +144,13 @@ module.exports = function createLikesRouter(wss) {
   /** Mes likes (IDs) */
   router.get("/me/likes", authRequired, async (req, res) => {
     const userId = Number(req?.user?.id);
-    console.log("[me/likes] userId:", userId);
+    // console.log("[me/likes] userId:", userId);
     try {
       const [rows] = await pool.query(
         `SELECT product_id FROM ${LIKE_TABLE} WHERE user_id=? ORDER BY created_at DESC`,
         [userId]
       );
-      console.log("[me/likes] rows:", rows);
+      // console.log("[me/likes] rows:", rows);
       res.json({ user_id: userId, product_ids: rows.map((r) => r.product_id) });
     } catch (err) {
       console.error("likes.mine error:", err);

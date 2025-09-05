@@ -113,15 +113,15 @@ router.post("/shops/me/location", authRequired, async (req, res) => {
     const ok = await repo.upsert(payload);
 
     // log utile (peut être retiré en prod)
-    console.log("[SHOP LOC UPSERT]", {
-      db: process.env.DB_NAME,
-      user_id: payload.user_id,
-      address: payload.address,
-      lat: payload.latitude,
-      lng: payload.longitude,
-      is_public: payload.is_public,
-      success: ok,
-    });
+    // console.log("[SHOP LOC UPSERT]", {
+    //   db: process.env.DB_NAME,
+    //   user_id: payload.user_id,
+    //   address: payload.address,
+    //   lat: payload.latitude,
+    //   lng: payload.longitude,
+    //   is_public: payload.is_public,
+    //   success: ok,
+    // });
 
     if (!ok) return res.json({ success: false });
 

@@ -8,15 +8,16 @@ const path = require("path");
 const cookieParser = require("cookie-parser");
 const compression = require("compression");
 
+// ✅ imports auth/ticket
+const { verifyPhpJwt } = require("./utils/auth-phpjwt");
+const { verifyWsTicket } = require("./utils/ws-ticket");
+
 const app = express();
 const server = http.createServer(app);
 
 // ——— Durcir les timeouts HTTP pour accélérer l’extinction ———
 server.keepAliveTimeout = 1_000; // 1s
 server.headersTimeout = 5_000; // 5s (doit > keepAliveTimeout)
-
-const { authRequired } = require("./utils/auth-phpjwt"); // ✅ ajoute ceci
-const { wsIsAdmin } = require("./utils/ws-auth");
 
 // ====== Middlewares globaux ======
 app.use(
@@ -85,6 +86,64 @@ const wssAnalytics = new WebSocket.Server({
   perMessageDeflate: false,
 });
 
+const makeAnalyticsHub = require("./live/analyticsHub");
+const hub = makeAnalyticsHub(wssAnalytics);
+
+// Pour que les routes puissent pousser les events live
+app.set("analyticsLiveHub", hub);
+
+// Pont générique: une seule méthode que les routes appellent
+app.set("analyticsBroadcast", (evt) => {
+  // evt attendu: { type, name?, path?, anon_id?, ts? }
+  hub.onTrackEvent(evt);
+});
+
+// Snapshot minimal au connect (remonte l'active_now tout de suite)
+const pool = require("./db/mysql");
+
+// ... après makeAnalyticsHub et avant server.listen
+wssAnalytics.on("connection", async (ws) => {
+  try {
+    ws.send(JSON.stringify({ type: "hello", now: Date.now() }));
+
+    // --- TOP PAGES (24h) : pageview ou product_view ---
+    const [topRows] = await pool.query(`
+      SELECT path, SUM(views) AS views, SUM(visitors) AS visitors FROM (
+        SELECT path, COUNT(*) AS views, COUNT(DISTINCT anon_id) AS visitors
+        FROM sa_pageviews
+        WHERE event_time_utc >= (NOW() - INTERVAL 1 DAY)
+        GROUP BY path
+        UNION ALL
+        SELECT path, COUNT(*) AS views, COUNT(DISTINCT anon_id) AS visitors
+        FROM sa_events
+        WHERE name='product_view' AND event_time_utc >= (NOW() - INTERVAL 1 DAY)
+        GROUP BY path
+      ) t
+      GROUP BY path
+      ORDER BY views DESC
+      LIMIT 50
+    `);
+    ws.send(
+      JSON.stringify({ type: "top_pages_snapshot", rows: topRows || [] })
+    );
+
+    // --- FUNNEL (7j) : product_view, add_to_cart, checkout_start (depuis sa_events)
+    const [funnelRows] = await pool.query(`
+      SELECT name, COUNT(*) AS cnt
+      FROM sa_events
+      WHERE name IN ('product_view','add_to_cart','checkout_start')
+        AND event_time_utc >= (NOW() - INTERVAL 7 DAY)
+      GROUP BY name
+    `);
+    const base = { product_view: 0, add_to_cart: 0, checkout_start: 0 };
+    for (const r of funnelRows || []) base[r.name] = Number(r.cnt) || 0;
+    ws.send(JSON.stringify({ type: "funnel_snapshot", ...base }));
+
+    // Optionnel : snapshot "active_now"
+    ws.send(JSON.stringify({ type: "active_now", count: hub.getActiveNow() }));
+  } catch {}
+});
+
 const initLikes = require("./ws/index");
 const initChat = require("./ws/chat");
 const cleanupLikes = initLikes(wssLikes) || (() => {});
@@ -103,49 +162,94 @@ server.on("connection", (socket) => {
   socket.on("close", () => httpSockets.delete(socket));
 });
 
-// ✅ Fusionne en UN SEUL upgrade handler
+function isAllowedOrigin(origin) {
+  const list = (
+    process.env.ADMIN_ORIGINS || "http://localhost:8000,http://127.0.0.1:8000"
+  )
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!origin) return false;
+  return list.some((base) => origin.startsWith(base));
+}
+
 server.on("upgrade", (req, socket, head) => {
-  const u = req.url || "";
-
-  // Analytics: protégé (JWT ou x-user-id)
-  if (u === "/ws/analytics" || u.startsWith("/ws/analytics?")) {
-    if (!wsIsAdmin(req)) {
-      try {
-        socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
-        socket.destroy();
-      } catch {}
-      return;
-    }
-    wssAnalytics.handleUpgrade(req, socket, head, (ws) =>
-      wssAnalytics.emit("connection", ws, req)
-    );
-    return;
-  }
-
-  // Likes: public
-  if (u === "/ws/likes" || u.startsWith("/ws/likes?")) {
-    wssLikes.handleUpgrade(req, socket, head, (ws) =>
-      wssLikes.emit("connection", ws, req)
-    );
-    return;
-  }
-
-  // Chat: public (ou mets ton propre check si besoin)
-  if (u === "/ws/chat" || u.startsWith("/ws/chat?")) {
-    wssChat.handleUpgrade(req, socket, head, (ws) =>
-      wssChat.emit("connection", ws, req)
-    );
-    return;
-  }
-
-  // Autres chemins WS => refuse
   try {
-    socket.destroy();
-  } catch {}
-});
+    const origin = String(req.headers.origin || req.headers.referer || "");
+    if (!isAllowedOrigin(origin)) {
+      socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+      return socket.destroy();
+    }
 
-// ⚠️ SUPPRIME cette ligne qui cassait (elle était avant PORT):
-// console.log(`✅ WS Analytics : ws://localhost:${PORT}/ws/analytics`);
+    const u = new URL(req.url, "http://localhost");
+    const pathname = u.pathname;
+    const token = u.searchParams.get("token");
+    const ticket = u.searchParams.get("ticket"); // si côté client tu mets ?ticket=…
+    const xuid = u.searchParams.get("x-user-id"); // ⚠️ tirets, pas underscore
+
+    function ok(wss) {
+      wss.handleUpgrade(req, socket, head, (ws) =>
+        wss.emit("connection", ws, req)
+      );
+    }
+
+    if (pathname === "/ws/analytics") {
+      const secret =
+        process.env.JWT_SECRET || process.env.SECRET || "change_me";
+
+      let authed = false;
+
+      // 1) Si ?token=… est présent, essaie d'abord comme JWT PHP, sinon comme TICKET
+      if (token && !authed) {
+        try {
+          const payload = verifyPhpJwt(token, secret);
+          const role = String(payload?.role || payload?.r || "").toLowerCase();
+          if (role === "admin" || role === "user") authed = true;
+        } catch (_) {
+          // pas un JWT -> essaie comme ticket court
+          try {
+            const v = verifyWsTicket(token, secret);
+            if (v && v.userId) authed = true;
+          } catch {}
+        }
+      }
+
+      // 2) Si ?ticket=… est présent, vérifie-le
+      if (!authed && ticket) {
+        const v = verifyWsTicket(ticket, secret);
+        if (v && v.userId) authed = true;
+      }
+
+      // 3) DEV fallback via ?x-user-id= (localhost uniquement)
+      if (
+        !authed &&
+        process.env.NODE_ENV !== "production" &&
+        xuid &&
+        /^\d+$/.test(String(xuid))
+      ) {
+        authed = true;
+      }
+
+      if (authed) return ok(wssAnalytics);
+
+      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+      return socket.destroy();
+    }
+
+    // autres WS publics
+    if (pathname === "/ws/likes") return ok(wssLikes);
+    if (pathname === "/ws/chat") return ok(wssChat);
+
+    socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
+    socket.destroy();
+  } catch (e) {
+    try {
+      socket.write("HTTP/1.1 500 Internal Server Error\r\n\r\n");
+    } finally {
+      socket.destroy();
+    }
+  }
+});
 
 // Upload images (réutilisé par /api/feed/photo si besoin)
 const multer = require("multer");
@@ -176,13 +280,23 @@ server.listen(PORT, () => {
   console.log(`✅ WS Analytics : ws://localhost:${PORT}/ws/analytics`);
 });
 
-app.set("analyticsBroadcast", (msg) => {
-  const data = JSON.stringify(msg);
-  wssAnalytics.clients.forEach((c) => {
-    try {
-      c.send(data);
-    } catch {}
-  });
+// 🔁 Pont: route /v1/track → hub live
+app.set("analyticsBroadcast", (evt) => {
+  // evt attendu: { type, path, anon_id, ts, ... }
+  // (On accepte aussi l'ancien format { t: 'event', event: {...} } pour rétro-compat)
+  if (evt?.event && !evt.type) {
+    // ancien format
+    hub.onTrackEvent({
+      type:
+        evt.event.type ||
+        (evt.event.name === "product_view" ? "product_view" : "event"),
+      path: evt.event.path,
+      anon_id: evt.event.anon_id,
+      ts: evt.event.ts,
+    });
+  } else {
+    hub.onTrackEvent(evt);
+  }
 });
 
 // ====== Arrêt propre ======

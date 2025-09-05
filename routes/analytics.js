@@ -2,6 +2,8 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../db/mysql");
+const { createWsTicket } = require("../utils/ws-ticket");
+const { authRequired } = require("../utils/auth-phpjwt");
 
 /** Utils */
 function clamp(n, min, max) {
@@ -198,10 +200,13 @@ router.post("/v1/track", async (req, res) => {
       return res.status(400).json({ error: "type invalid" });
     }
 
-    // Live
+    // Live (normalisé): pousse un event au hub
     req.app.get("analyticsBroadcast")?.({
-      t: "event",
-      event: { type, name, path, ts: eventTime.getTime() },
+      type, // 'pageview' | 'product_view' | 'event'
+      name: name || null, // utile quand type === 'event' (ex: 'add_to_cart')
+      path: path || "/", // IMPORTANT pour Top pages
+      anon_id: anon_id, // pour uniques "visitors" live
+      ts: eventTime.getTime(),
     });
 
     return res.json({ ok: true });
@@ -216,12 +221,22 @@ router.post("/v1/track", async (req, res) => {
       stack: e.stack,
     });
     const isDev = process.env.NODE_ENV !== "production";
-    return res
-      .status(500)
-      .json({
-        error: "server",
-        detail: isDev ? e.sqlMessage || e.message : undefined,
-      });
+    return res.status(500).json({
+      error: "server",
+      detail: isDev ? e.sqlMessage || e.message : undefined,
+    });
+  }
+});
+
+router.post("/ws-ticket", authRequired, (req, res) => {
+  try {
+    const uid = req.user?.id;
+    if (!uid) return res.status(401).json({ error: "Unauthorized" });
+    const secret = process.env.JWT_SECRET || process.env.SECRET || "change_me";
+    const ticket = createWsTicket(uid, secret);
+    res.json({ ticket, ttl_sec: 60 });
+  } catch (e) {
+    res.status(500).json({ error: "ticket_failed" });
   }
 });
 
