@@ -7,6 +7,7 @@ const cors = require("cors");
 const path = require("path");
 const cookieParser = require("cookie-parser");
 const compression = require("compression");
+const dbRouter = require('./routes/db');
 
 // ✅ imports auth/ticket
 const { verifyPhpJwt } = require("./utils/auth-phpjwt");
@@ -14,6 +15,7 @@ const { verifyWsTicket } = require("./utils/ws-ticket");
 
 const app = express();
 const server = http.createServer(app);
+
 
 // ——— Durcir les timeouts HTTP pour accélérer l’extinction ———
 server.keepAliveTimeout = 1_000; // 1s
@@ -35,6 +37,7 @@ app.use(compression());
 
 // ====== Fichiers statiques ======
 app.use("/uploads", express.static(path.join(__dirname, "public/uploads")));
+app.use('api', dbRouter);
 
 // ====== Routes API ======
 const messagesRoute = require("./routes/messages");
@@ -273,8 +276,6 @@ app.post("/api/chat/upload", upload.array("images[]", 10), (req, res) => {
 // ✅ Likes (en temps réel via WS)
 const likesRoutes = require("./routes/likes");
 app.use("/api", likesRoutes(wssLikes));
-
-app.use("/api", require('./routes/db'));
 
 // ====== Healthcheck ======
 app.get("/health",(req,res)=>res.json({ok:true}));

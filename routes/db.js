@@ -1,42 +1,25 @@
+// /srv/node-app/routes/db.js
+const express = require('express');
+const router = express.Router();
+const { pool } = require('../db/mysql');
 
-// db/mysql.js
-const mysql = require("mysql2/promise");
-require("dotenv").config();
+router.get('/db/ping', async (_req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT NOW() AS now, DATABASE() AS db');
+    res.json({ ok: true, db: rows[0]?.db, now: rows[0]?.now });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
 
-const config = {
-  host: process.env.DB_HOST || "127.0.0.1",
-  port: Number(process.env.DB_PORT || 3306),
-  user: process.env.DB_USER || "root",
-  password: process.env.DB_PASSWORD ?? process.env.DB_PASS ?? "",
-  database: process.env.DB_NAME || "softadastra_feed_test",
-  waitForConnections: true,
-  connectionLimit: 20,
-  namedPlaceholders: true,
-  timezone: "Z",
-  // ⚠️ charset = 'utf8mb4' (PAS une collation)
-  charset: "utf8mb4",
-};
+router.get('/db/stats', async (_req, res) => {
+  try {
+    const [[m]] = await pool.query('SELECT COUNT(*) AS messages FROM chat_messages');
+    const [[t]] = await pool.query('SELECT COUNT(*) AS threads  FROM chat_threads');
+    res.json({ ok: true, messages: m.messages, threads: t.threads });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
 
-const pool = mysql.createPool(config);
-
-// Optionnel : forcer le charset côté session
-pool
-  .getConnection()
-  .then(async (conn) => {
-    try {
-      await conn.query("SET NAMES utf8mb4");
-      console.log("✅ Connexion MySQL OK (utf8mb4)");
-    } finally {
-      conn.release();
-    }
-  })
-  .catch((err) => {
-    console.error("❌ MySQL connection error:", err.message);
-  });
-
-module.exports = {
-  pool,
-  getConnection: () => pool.getConnection(),
-  query: (sql, params) => pool.query(sql, params),
-  execute: (sql, params) => pool.execute(sql, params),
-};
+module.exports = router;
