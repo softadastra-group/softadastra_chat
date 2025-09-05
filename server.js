@@ -144,13 +144,24 @@ wssAnalytics.on("connection", async (ws) => {
   } catch {}
 });
 
+// utilitaire: broadcast JSON à tous les clients analytics connectés
+function broadcastAnalytics(wss, msg) {
+  try {
+    const s = JSON.stringify(msg);
+    wss.clients.forEach((c) => {
+      if (c.readyState === 1) c.send(s);
+    });
+  } catch {}
+}
+
 const initLikes = require("./ws/index");
 const initChat = require("./ws/chat");
 const cleanupLikes = initLikes(wssLikes) || (() => {});
 const cleanupChat = initChat(wssChat) || (() => {});
 
-wssLikes.on("connection", () => console.log("🤝 WS likes connection OK"));
-wssChat.on("connection", () => console.log("🤝 WS chat connection OK"));
+wssLikes.on("connection", () => {});
+wssChat.on("connection", () => {});
+
 wssAnalytics.on("connection", (ws) => {
   ws.send(JSON.stringify({ t: "hello", now: Date.now() }));
 });
@@ -282,21 +293,34 @@ server.listen(PORT, () => {
 
 // 🔁 Pont: route /v1/track → hub live
 app.set("analyticsBroadcast", (evt) => {
-  // evt attendu: { type, path, anon_id, ts, ... }
-  // (On accepte aussi l'ancien format { t: 'event', event: {...} } pour rétro-compat)
+  // evt attendu: { type, path, anon_id, ts, name? } (ou ancien format { event: {...} })
+  let norm;
   if (evt?.event && !evt.type) {
-    // ancien format
-    hub.onTrackEvent({
-      type:
-        evt.event.type ||
-        (evt.event.name === "product_view" ? "product_view" : "event"),
-      path: evt.event.path,
-      anon_id: evt.event.anon_id,
-      ts: evt.event.ts,
-    });
+    // ancien format: { t:'event', event:{...} } ou similaire
+    const e = evt.event || {};
+    norm = {
+      type: e.type || (e.name === "product_view" ? "product_view" : "event"),
+      name: e.name || null,
+      path: e.path || "/",
+      anon_id: e.anon_id || null,
+      ts: e.ts || Date.now(),
+      // tu peux inclure d'autres champs ici si tu veux les logger
+    };
   } else {
-    hub.onTrackEvent(evt);
+    norm = {
+      type: String(evt?.type || "event"),
+      name: evt?.name || null,
+      path: evt?.path || "/",
+      anon_id: evt?.anon_id || null,
+      ts: evt?.ts || Date.now(),
+    };
   }
+
+  // 1) On nourrit le hub (pour active_now + diffs)
+  hub.onTrackEvent(norm);
+
+  // 2) On push le "raw event" au flux live des clients (t: 'event')
+  broadcastAnalytics(wssAnalytics, { t: "event", event: norm });
 });
 
 // ====== Arrêt propre ======
