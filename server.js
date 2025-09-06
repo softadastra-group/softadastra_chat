@@ -70,7 +70,6 @@ const corsOptions = {
 
 // ✅ IMPORTANT: déclarer le Vary + CORS AVANT TOUTES LES ROUTES
 app.use((req, res, next) => {
-  if (req.method === "OPTIONS") return res.sendStatus(204);
   res.setHeader("Vary", "Origin");
   next();
 });
