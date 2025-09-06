@@ -153,9 +153,13 @@ router.get("/:id/replies", async (req, res) => {
       return fail(res, "Invalid parent id", 400);
     }
 
-    const maxId = req.query.max_id ? Number(req.query.max_id) : null;
-    const sinceId = req.query.since_id ? Number(req.query.since_id) : null;
-    const limit = req.query.limit ? Number(req.query.limit) : 20;
+    const maxId = Number.isFinite(+req.query.max_id) ? +req.query.max_id : null;
+    const sinceId = Number.isFinite(+req.query.since_id)
+      ? +req.query.since_id
+      : null;
+    let limit = Number.isFinite(+req.query.limit) ? +req.query.limit : 20;
+    if (limit <= 0) limit = 20;
+    if (limit > 50) limit = 50;
 
     const items = await repo.listReplies({ parentId, maxId, sinceId, limit });
     return ok(res, { items });
@@ -179,12 +183,21 @@ router.get("/:id", async (req, res) => {
   }
 });
 
+// GET /api/feed
 router.get("/", async (req, res) => {
   try {
-    const userId = req.query.user_id ? Number(req.query.user_id) : null;
-    const maxId = req.query.max_id ? Number(req.query.max_id) : null;
-    const sinceId = req.query.since_id ? Number(req.query.since_id) : null;
-    const limit = req.query.limit ? Number(req.query.limit) : 20;
+    const userId = Number.isFinite(+req.query.user_id)
+      ? +req.query.user_id
+      : null;
+    const maxId = Number.isFinite(+req.query.max_id) ? +req.query.max_id : null;
+    const sinceId = Number.isFinite(+req.query.since_id)
+      ? +req.query.since_id
+      : null;
+
+    let limit = Number.isFinite(+req.query.limit) ? +req.query.limit : 20;
+    if (limit <= 0) limit = 20;
+    if (limit > 50) limit = 50;
+
     const rows = await repo.listFeed({ userId, maxId, sinceId, limit });
     return ok(res, { items: rows });
   } catch (e) {

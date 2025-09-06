@@ -168,34 +168,33 @@ module.exports = (db) => {
       sinceId = null,
       limit = 20,
     }) {
-      limit = Math.max(1, Math.min(100, Number(limit) || 20));
+      // borne & cast
+      limit = Number.isFinite(+limit) ? Math.min(Math.max(+limit, 1), 50) : 20;
 
-      const where = [`p.is_deleted = 0`];
+      const where = [`p.is_deleted = 0`, `p.visibility = 'public'`];
       const params = {};
 
-      where.push(`p.visibility = 'public'`); // followers plus tard
-
-      if (userId) {
+      if (Number.isFinite(+userId)) {
         where.push(`p.user_id = :user_id`);
-        params.user_id = userId;
+        params.user_id = +userId;
       }
-      if (maxId) {
+      if (Number.isFinite(+maxId)) {
         where.push(`p.id <= :max_id`);
-        params.max_id = maxId;
+        params.max_id = +maxId;
       }
-      if (sinceId) {
+      if (Number.isFinite(+sinceId)) {
         where.push(`p.id > :since_id`);
-        params.since_id = sinceId;
+        params.since_id = +sinceId;
       }
 
+      // ⚠️ pas de placeholder pour LIMIT
       const sql = `
-        SELECT p.*
-        FROM feed_posts p
-        WHERE ${where.join(" AND ")}
-        ORDER BY p.id DESC
-        LIMIT :lim
-      `;
-      params.lim = limit;
+    SELECT p.*
+    FROM feed_posts p
+    WHERE ${where.join(" AND ")}
+    ORDER BY p.id DESC
+    LIMIT ${limit}
+  `;
 
       const [rows] = await db.execute(sql, params);
       if (!rows.length) return [];
@@ -203,13 +202,12 @@ module.exports = (db) => {
       const ids = rows.map((r) => r.id);
       const [medias] = await db.query(
         `SELECT m.*
-         FROM feed_post_media m
-         WHERE m.post_id IN (${ids.map(() => "?").join(",")})
-         ORDER BY m.post_id ASC, m.position ASC, m.id ASC`,
+     FROM feed_post_media m
+     WHERE m.post_id IN (${ids.map(() => "?").join(",")})
+     ORDER BY m.post_id ASC, m.position ASC, m.id ASC`,
         ids
       );
 
-      // Attach medias
       const mediaMap = new Map();
       for (const m of medias) {
         if (!mediaMap.has(m.post_id)) mediaMap.set(m.post_id, []);
@@ -391,39 +389,39 @@ module.exports = (db) => {
      * Pagination: maxId (<=), sinceId (>), limit.
      */
     async listReplies({ parentId, maxId = null, sinceId = null, limit = 20 }) {
-      if (!parentId) throw new Error("parentId is required");
-      limit = Math.max(1, Math.min(100, Number(limit) || 20));
+      if (!Number.isFinite(+parentId) || +parentId <= 0) return [];
+      limit = Number.isFinite(+limit) ? Math.min(Math.max(+limit, 1), 50) : 20;
 
       const where = [`p.is_deleted = 0`, `p.reply_to_id = :pid`];
-      const params = { pid: parentId };
+      const params = { pid: +parentId };
 
-      if (maxId) {
+      if (Number.isFinite(+maxId)) {
         where.push(`p.id <= :max_id`);
-        params.max_id = maxId;
+        params.max_id = +maxId;
       }
-      if (sinceId) {
+      if (Number.isFinite(+sinceId)) {
         where.push(`p.id > :since_id`);
-        params.since_id = sinceId;
+        params.since_id = +sinceId;
       }
 
-      // NB: visibilité 'followers' ignorée pour le moment (tu pourras filtrer plus tard)
+      // ⚠️ pas de placeholder pour LIMIT
       const sql = `
-        SELECT p.*
-        FROM feed_posts p
-        WHERE ${where.join(" AND ")}
-        ORDER BY p.id DESC
-        LIMIT :lim
-      `;
-      params.lim = limit;
+    SELECT p.*
+    FROM feed_posts p
+    WHERE ${where.join(" AND ")}
+    ORDER BY p.id DESC
+    LIMIT ${limit}
+  `;
 
       const [rows] = await db.execute(sql, params);
       if (!rows.length) return [];
 
       const ids = rows.map((r) => r.id);
       const [medias] = await db.query(
-        `SELECT m.* FROM feed_post_media m
-         WHERE m.post_id IN (${ids.map(() => "?").join(",")})
-         ORDER BY m.post_id ASC, m.position ASC, m.id ASC`,
+        `SELECT m.*
+     FROM feed_post_media m
+     WHERE m.post_id IN (${ids.map(() => "?").join(",")})
+     ORDER BY m.post_id ASC, m.position ASC, m.id ASC`,
         ids
       );
 
