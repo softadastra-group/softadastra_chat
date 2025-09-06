@@ -69,10 +69,39 @@ const corsOptions = {
 };
 
 // ✅ IMPORTANT: déclarer le Vary + CORS AVANT TOUTES LES ROUTES
+// ---- CORS hardening: renvoie TOUJOURS les bons headers + gère OPTIONS ----
 app.use((req, res, next) => {
+  // Autorise uniquement tes origines
+  const origin = req.headers.origin || "";
+  const allow =
+    /^https:\/\/([a-z0-9-]+\.)?softadastra\.com$/i.test(origin) ||
+    (process.env.ADMIN_ORIGINS || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .includes(origin);
+
+  if (allow) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+  }
+  // pour que les caches différencient selon Origin
   res.setHeader("Vary", "Origin");
+
+  // méthodes et headers utilisés par ton front
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, x-user-id, X-CSRF-Token, Sec-WebSocket-Protocol"
+  );
+
+  // Répondre immédiatement aux pré-vols
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
+  }
   next();
 });
+
 app.use(cors(corsOptions));
 // ✅ Prévols
 app.options(/.*/, cors(corsOptions));
@@ -393,6 +422,19 @@ app.set("analyticsBroadcast", (evt) => {
   // 2) On push le "raw event" au flux live des clients (t: 'event')
   broadcastAnalytics(wssAnalytics, { t: "event", event: norm });
 });
+
+const analyticsV1 = express.Router();
+
+// pré-vol explicite (pas obligatoire grâce au middleware, mais propre)
+analyticsV1.options("/v1/track", (req, res) => res.sendStatus(204));
+
+// acceptation silencieuse (204) des événements
+analyticsV1.post("/v1/track", (req, res) => {
+  // TODO: persister si besoin
+  res.sendStatus(204);
+});
+
+app.use("/api/analytics", analyticsV1);
 
 // ----- Error handler global (CORS & autres) -----
 app.use((err, req, res, next) => {
