@@ -168,21 +168,6 @@ router.get("/:id/replies", async (req, res) => {
   }
 });
 
-// ================================
-// GET /api/feed/:id  (publique)  <-- LAISSER APRÈS /:id/replies
-// ================================
-router.get("/:id", async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id <= 0) return fail(res, "Invalid id", 400);
-    const post = await repo.getPostById(id);
-    if (!post) return fail(res, "Not found", 404);
-    return ok(res, { post });
-  } catch (e) {
-    return fail(res, e.message || "Failed to fetch post", 500);
-  }
-});
-
 // GET /api/feed
 router.get("/", async (req, res) => {
   try {
@@ -198,10 +183,62 @@ router.get("/", async (req, res) => {
     if (limit <= 0) limit = 20;
     if (limit > 50) limit = 50;
 
+    // ✅ MODE SIMPLE (timeline publique + filtre user_id), activable avec ?simple=1
+    if (req.query.simple === "1") {
+      // NOTE: adapte "posts" au nom réel de ta table
+      const params = [];
+      let where =
+        "p.is_deleted=0 AND (p.reply_to_id IS NULL OR p.reply_to_id=0) AND p.visibility='public'";
+
+      if (userId) {
+        where += " AND p.user_id = ?";
+        params.push(userId);
+      }
+      if (maxId) {
+        where += " AND p.id <= ?";
+        params.push(maxId);
+      }
+      if (sinceId) {
+        where += " AND p.id > ?";
+        params.push(sinceId);
+      }
+
+      const sql = `
+        SELECT
+          p.id, p.user_id, p.body, p.reply_to_id, p.visibility,
+          p.likes_count, p.replies_count, p.reposts_count,
+          p.is_deleted, p.created_at, p.updated_at
+        FROM posts p
+        WHERE ${where}
+        ORDER BY p.id DESC
+        LIMIT ?
+      `;
+      params.push(limit);
+
+      const [rows] = await db.query(sql, params);
+      return ok(res, { items: rows });
+    }
+
+    // ✳️ COMPORTEMENT EXISTANT (repo)
     const rows = await repo.listFeed({ userId, maxId, sinceId, limit });
     return ok(res, { items: rows });
   } catch (e) {
     return fail(res, e.message || "Failed to list feed", 500);
+  }
+});
+
+// ================================
+// GET /api/feed/:id  (publique)  <-- LAISSER APRÈS /:id/replies
+// ================================
+router.get("/:id", async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return fail(res, "Invalid id", 400);
+    const post = await repo.getPostById(id);
+    if (!post) return fail(res, "Not found", 404);
+    return ok(res, { post });
+  } catch (e) {
+    return fail(res, e.message || "Failed to fetch post", 500);
   }
 });
 
