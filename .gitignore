@@ -6,8 +6,8 @@ node_modules/
 package-lock.json
 
 # Dossiers et fichiers générés
-db/
-ws/
+# db/
+# ws/
 
 # Fichiers de build ou de logs
 *.log

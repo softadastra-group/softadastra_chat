@@ -7,7 +7,7 @@ const cors = require("cors");
 const path = require("path");
 const cookieParser = require("cookie-parser");
 const compression = require("compression");
-const dbRouter = require('./routes/db');
+const dbRouter = require("./routes/db");
 
 // ✅ imports auth/ticket
 const { verifyPhpJwt } = require("./utils/auth-phpjwt");
@@ -16,28 +16,62 @@ const { verifyWsTicket } = require("./utils/ws-ticket");
 const app = express();
 const server = http.createServer(app);
 
-
 // ——— Durcir les timeouts HTTP pour accélérer l’extinction ———
 server.keepAliveTimeout = 1_000; // 1s
 server.headersTimeout = 5_000; // 5s (doit > keepAliveTimeout)
 
 // ====== Middlewares globaux ======
 
+const allowlist = new Set(
+  (process.env.ADMIN_ORIGINS || "http://localhost:8000,http://127.0.0.1:8000")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+);
+
+function corsOrigin(origin, cb) {
+  // Requêtes server-to-server (pas d'Origin) -> OK
+  if (!origin) return cb(null, true);
+  try {
+    const u = new URL(origin);
+    const key = `${u.protocol}//${u.host}`;
+
+    // wildcard *.softadastra.com en https
+    if (
+      u.protocol === "https:" &&
+      (u.hostname === "softadastra.com" ||
+        u.hostname.endsWith(".softadastra.com"))
+    ) {
+      return cb(null, true);
+    }
+
+    // allowlist explicite (dev/staging/etc.)
+    if (allowlist.has(key)) return cb(null, true);
+  } catch {}
+  return cb(new Error("CORS: Origin not allowed"), false);
+}
+
 app.use(
   cors({
-    origin: ["http://localhost:8000", "http://127.0.0.1:8000"],
+    origin: corsOrigin,
     credentials: true,
-    allowedHeaders: ["Content-Type", "Authorization", "x-user-id"], // + x-user-id
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "x-user-id",
+      "X-CSRF-Token",
+    ],
   })
 );
+
 app.use(express.json({ limit: "2mb" }));
 app.use(cookieParser());
 app.use(compression());
 
 // ====== Fichiers statiques ======
 app.use("/uploads", express.static(path.join(__dirname, "public/uploads")));
-app.use('/api', dbRouter);
+app.use("/api", dbRouter);
 
 // ====== Routes API ======
 const messagesRoute = require("./routes/messages");
@@ -177,14 +211,34 @@ server.on("connection", (socket) => {
 });
 
 function isAllowedOrigin(origin) {
+  if (!origin) return false;
+  let url;
+  try {
+    url = new URL(origin);
+  } catch {
+    return false;
+  }
+
+  const o = `${url.protocol}//${url.host}`;
+
+  // 1) Wildcard *.softadastra.com en https
+  const host = url.hostname;
+  if (
+    url.protocol === "https:" &&
+    (host === "softadastra.com" || host.endsWith(".softadastra.com"))
+  ) {
+    return true;
+  }
+
+  // 2) .env explicit allowlist
   const list = (
     process.env.ADMIN_ORIGINS || "http://localhost:8000,http://127.0.0.1:8000"
   )
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
-  if (!origin) return false;
-  return list.some((base) => origin.startsWith(base));
+
+  return list.includes(o);
 }
 
 server.on("upgrade", (req, socket, head) => {
@@ -278,7 +332,7 @@ const likesRoutes = require("./routes/likes");
 app.use("/api", likesRoutes(wssLikes));
 
 // ====== Healthcheck ======
-app.get("/health",(req,res)=>res.json({ok:true}));
+app.get("/health", (req, res) => res.json({ ok: true }));
 app.get("/", (req, res) => {
   res.json({
     message: "Hello from Softadastra Node.js API!",
