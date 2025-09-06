@@ -83,10 +83,16 @@ app.use(express.json({ limit: "2mb" }));
 app.use(cookieParser());
 app.use(compression());
 
-// ====== Fichiers statiques ======
-app.use("/uploads", express.static(path.join(__dirname, "public/uploads")));
-app.use("/api", dbRouter);
+// ====== Fichiers statiques (images uploadées) ======
+const uploadDir = path.join(__dirname, "public/uploads");
 
+app.use(
+  "/uploads",
+  express.static(uploadDir, {
+    immutable: true,
+    maxAge: "365d", // cache long
+  })
+);
 // ====== Routes API ======
 const messagesRoute = require("./routes/messages");
 app.use("/api/messages", messagesRoute);
