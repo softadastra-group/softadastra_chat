@@ -1,3 +1,5 @@
+import "dotenv/config";
+
 require("dotenv").config();
 
 const express = require("express");
@@ -42,13 +44,23 @@ function isSoftadastraWildcard(u) {
 }
 
 function corsOrigin(origin, cb) {
-  if (!origin) return cb(null, true); // server-to-server
+  if (!origin) return cb(null, true);
+
+  // ✅ Prod : *.softadastra.com en HTTPS
   if (isSoftadastraWildcard(origin)) return cb(null, true);
+
   try {
     const u = new URL(origin);
+
+    // ✅ Dev friendly : autorise localhost (tous ports) et 127.0.0.1
+    if (u.hostname === "localhost" || u.hostname === "127.0.0.1") {
+      return cb(null, true);
+    }
+
     const key = `${u.protocol}//${u.host}`; // host inclut le port
     if (allowlist.has(key)) return cb(null, true);
   } catch {}
+
   return cb(new Error("CORS: Origin not allowed"), false);
 }
 
@@ -67,6 +79,7 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
+console.log("ADMIN_ORIGINS =", process.env.ADMIN_ORIGINS);
 
 // (tes autres middlewares après)
 app.use(express.json({ limit: "2mb" }));
