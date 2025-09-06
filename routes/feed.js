@@ -183,23 +183,21 @@ router.get("/", async (req, res) => {
     if (limit <= 0) limit = 20;
     if (limit > 50) limit = 50;
 
-    // ✅ MODE SIMPLE (timeline publique + filtre user_id), activable avec ?simple=1
+    // ✅ MODE SIMPLE (timeline publique + filtre auteur), active avec ?simple=1
     if (req.query.simple === "1") {
-      // NOTE: adapte "posts" au nom réel de ta table
       const params = [];
-      let where =
-        "p.is_deleted=0 AND (p.reply_to_id IS NULL OR p.reply_to_id=0) AND p.visibility='public'";
+      let where = `p.is_deleted=0 AND p.visibility='public' AND (p.reply_to_id IS NULL OR p.reply_to_id=0)`;
 
       if (userId) {
-        where += " AND p.user_id = ?";
+        where += ` AND p.user_id=?`;
         params.push(userId);
       }
       if (maxId) {
-        where += " AND p.id <= ?";
+        where += ` AND p.id <= ?`;
         params.push(maxId);
       }
       if (sinceId) {
-        where += " AND p.id > ?";
+        where += ` AND p.id > ?`;
         params.push(sinceId);
       }
 
@@ -208,18 +206,38 @@ router.get("/", async (req, res) => {
           p.id, p.user_id, p.body, p.reply_to_id, p.visibility,
           p.likes_count, p.replies_count, p.reposts_count,
           p.is_deleted, p.created_at, p.updated_at
-        FROM posts p
+        FROM feed_posts p
         WHERE ${where}
         ORDER BY p.id DESC
-        LIMIT ?
+        LIMIT ${limit}
       `;
-      params.push(limit);
 
       const [rows] = await db.query(sql, params);
+
+      // Optionnel: attacher les médias (même logique que listFeed)
+      if (rows.length) {
+        const ids = rows.map((r) => r.id);
+        const [medias] = await db.query(
+          `SELECT m.id, m.post_id, m.url, m.mime_type, m.position, m.width, m.height
+           FROM feed_post_media m
+           WHERE m.post_id IN (${ids.map(() => "?").join(",")})
+           ORDER BY m.post_id ASC, m.position ASC, m.id ASC`,
+          ids
+        );
+        const map = new Map();
+        for (const m of medias) {
+          if (!map.has(m.post_id)) map.set(m.post_id, []);
+          map.get(m.post_id).push(m);
+        }
+        rows.forEach((r) => {
+          r.media = map.get(r.id) || [];
+        });
+      }
+
       return ok(res, { items: rows });
     }
 
-    // ✳️ COMPORTEMENT EXISTANT (repo)
+    // 🔵 Chemin existant via le repo
     const rows = await repo.listFeed({ userId, maxId, sinceId, limit });
     return ok(res, { items: rows });
   } catch (e) {
