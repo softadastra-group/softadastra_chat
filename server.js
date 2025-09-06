@@ -29,42 +29,55 @@ const allowlist = new Set(
     .filter(Boolean)
 );
 
+// wildcard *.softadastra.com en HTTPS
+function isSoftadastraWildcard(u) {
+  try {
+    const url = new URL(u);
+    if (url.protocol !== "https:") return false;
+    const h = url.hostname;
+    return h === "softadastra.com" || h.endsWith(".softadastra.com");
+  } catch {
+    return false;
+  }
+}
+
 function corsOrigin(origin, cb) {
   // Requêtes server-to-server (pas d'Origin) -> OK
   if (!origin) return cb(null, true);
+
+  if (isSoftadastraWildcard(origin)) return cb(null, true);
+
   try {
     const u = new URL(origin);
     const key = `${u.protocol}//${u.host}`;
-
-    // wildcard *.softadastra.com en https
-    if (
-      u.protocol === "https:" &&
-      (u.hostname === "softadastra.com" ||
-        u.hostname.endsWith(".softadastra.com"))
-    ) {
-      return cb(null, true);
-    }
-
-    // allowlist explicite (dev/staging/etc.)
     if (allowlist.has(key)) return cb(null, true);
   } catch {}
+
   return cb(new Error("CORS: Origin not allowed"), false);
 }
 
-app.use(
-  cors({
-    origin: corsOrigin,
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: [
-      "Content-Type",
-      "Authorization",
-      "x-user-id",
-      "X-CSRF-Token",
-    ],
-  })
-);
+const corsOptions = {
+  origin: corsOrigin,
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "x-user-id",
+    "X-CSRF-Token",
+  ],
+};
 
+// ✅ IMPORTANT: déclarer le Vary + CORS AVANT TOUTES LES ROUTES
+app.use((req, res, next) => {
+  res.setHeader("Vary", "Origin");
+  next();
+});
+app.use(cors(corsOptions));
+// ✅ Prévols
+app.options("*", cors(corsOptions));
+
+// (tes autres middlewares après)
 app.use(express.json({ limit: "2mb" }));
 app.use(cookieParser());
 app.use(compression());
@@ -379,6 +392,18 @@ app.set("analyticsBroadcast", (evt) => {
 
   // 2) On push le "raw event" au flux live des clients (t: 'event')
   broadcastAnalytics(wssAnalytics, { t: "event", event: norm });
+});
+
+// ----- Error handler global (CORS & autres) -----
+app.use((err, req, res, next) => {
+  if (String(err && err.message).startsWith("CORS:")) {
+    try {
+      res.setHeader("Vary", "Origin");
+    } catch {}
+    return res.status(403).json({ error: "CORS origin not allowed" });
+  }
+  console.error("Unhandled error:", err);
+  res.status(500).json({ error: "Internal server error" });
 });
 
 // ====== Arrêt propre ======
