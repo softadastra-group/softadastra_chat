@@ -37,7 +37,7 @@ app.use(compression());
 
 // ====== Fichiers statiques ======
 app.use("/uploads", express.static(path.join(__dirname, "public/uploads")));
-app.use('api', dbRouter);
+app.use('/api', dbRouter);
 
 // ====== Routes API ======
 const messagesRoute = require("./routes/messages");
