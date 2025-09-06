@@ -1,5 +1,3 @@
-import "dotenv/config";
-
 require("dotenv").config();
 
 const express = require("express");
@@ -79,7 +77,6 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
-console.log("ADMIN_ORIGINS =", process.env.ADMIN_ORIGINS);
 
 // (tes autres middlewares après)
 app.use(express.json({ limit: "2mb" }));
@@ -358,12 +355,14 @@ app.get("/", (req, res) => {
 });
 
 // ====== Démarrage HTTP + WS ======
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`✅ HTTP OK       : http://localhost:${PORT}`);
-  console.log(`✅ WS Likes     : ws://localhost:${PORT}/ws/likes`);
-  console.log(`✅ WS Chat      : ws://localhost:${PORT}/ws/chat`);
-  console.log(`✅ WS Analytics : ws://localhost:${PORT}/ws/analytics`);
+const PORT = Number(process.env.PORT || 3001); // ← 3001 par défaut
+const HOST = process.env.HOST || "127.0.0.1";
+
+server.listen(PORT, HOST, () => {
+  console.log(`✅ HTTP OK       : http://${HOST}:${PORT}`);
+  console.log(`✅ WS Likes     : ws://${HOST}:${PORT}/ws/likes`);
+  console.log(`✅ WS Chat      : ws://${HOST}:${PORT}/ws/chat`);
+  console.log(`✅ WS Analytics : ws://${HOST}:${PORT}/ws/analytics`);
 });
 
 // 🔁 Pont: route /v1/track → hub live
