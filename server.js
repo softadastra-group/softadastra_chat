@@ -33,7 +33,7 @@ const allowlist = new Set(
 function isSoftadastraWildcard(u) {
   try {
     const url = new URL(u);
-    if (url.protocol !== "https:") return false;
+    if (url.protocol !== "https:") return false; // prod en HTTPS
     const h = url.hostname;
     return h === "softadastra.com" || h.endsWith(".softadastra.com");
   } catch {
@@ -42,17 +42,13 @@ function isSoftadastraWildcard(u) {
 }
 
 function corsOrigin(origin, cb) {
-  // Requêtes server-to-server (pas d'Origin) -> OK
-  if (!origin) return cb(null, true);
-
+  if (!origin) return cb(null, true); // server-to-server
   if (isSoftadastraWildcard(origin)) return cb(null, true);
-
   try {
     const u = new URL(origin);
-    const key = `${u.protocol}//${u.host}`;
+    const key = `${u.protocol}//${u.host}`; // host inclut le port
     if (allowlist.has(key)) return cb(null, true);
   } catch {}
-
   return cb(new Error("CORS: Origin not allowed"), false);
 }
 
@@ -65,45 +61,11 @@ const corsOptions = {
     "Authorization",
     "x-user-id",
     "X-CSRF-Token",
+    "Sec-WebSocket-Protocol",
   ],
 };
 
-// ✅ IMPORTANT: déclarer le Vary + CORS AVANT TOUTES LES ROUTES
-// ---- CORS hardening: renvoie TOUJOURS les bons headers + gère OPTIONS ----
-app.use((req, res, next) => {
-  // Autorise uniquement tes origines
-  const origin = req.headers.origin || "";
-  const allow =
-    /^https:\/\/([a-z0-9-]+\.)?softadastra\.com$/i.test(origin) ||
-    (process.env.ADMIN_ORIGINS || "")
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .includes(origin);
-
-  if (allow) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-    res.setHeader("Access-Control-Allow-Credentials", "true");
-  }
-  // pour que les caches différencient selon Origin
-  res.setHeader("Vary", "Origin");
-
-  // méthodes et headers utilisés par ton front
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
-  res.setHeader(
-    "Access-Control-Allow-Headers",
-    "Content-Type, Authorization, x-user-id, X-CSRF-Token, Sec-WebSocket-Protocol"
-  );
-
-  // Répondre immédiatement aux pré-vols
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(204);
-  }
-  next();
-});
-
 app.use(cors(corsOptions));
-// ✅ Prévols
 app.options(/.*/, cors(corsOptions));
 
 // (tes autres middlewares après)
