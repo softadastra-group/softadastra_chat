@@ -126,6 +126,9 @@ app.use("/api", uploadRoutes);
 const meRoute = require("./routes/me");
 app.use(meRoute);
 
+const pushPublic = require("./routes/push-public");
+app.use("/api/push", pushPublic);
+
 // ====== WS (mode noServer) + upgrade manuel ======
 const wssLikes = new WebSocket.Server({
   noServer: true,
