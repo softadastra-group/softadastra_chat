@@ -379,7 +379,7 @@ app.set("analyticsBroadcast", (evt) => {
   // evt attendu: { type, path, anon_id, ts, name? } (ou ancien format { event: {...} })
   let norm;
   if (evt?.event && !evt.type) {
-    // ancien format: { t:'event', event:{...} } ou similaire
+    // ancien format: { t:'event', event:{...} }
     const e = evt.event || {};
     norm = {
       type: e.type || (e.name === "product_view" ? "product_view" : "event"),
@@ -387,7 +387,7 @@ app.set("analyticsBroadcast", (evt) => {
       path: e.path || "/",
       anon_id: e.anon_id || null,
       ts: e.ts || Date.now(),
-      // tu peux inclure d'autres champs ici si tu veux les logger
+      // ajoute ici d'autres champs si besoin (ua, referrer, etc.)
     };
   } else {
     norm = {
@@ -399,24 +399,44 @@ app.set("analyticsBroadcast", (evt) => {
     };
   }
 
-  // 1) On nourrit le hub (pour active_now + diffs)
+  // 1) Nourrit le hub (active_now + diffs)
   hub.onTrackEvent(norm);
 
-  // 2) On push le "raw event" au flux live des clients (t: 'event')
+  // 2) Diffuse l'event brut aux clients live
   broadcastAnalytics(wssAnalytics, { t: "event", event: norm });
 });
 
+// ====== Analytics V1 minimal (placer AVANT les autres routes analytics) ======
 const analyticsV1 = express.Router();
 
-// pré-vol explicite (pas obligatoire grâce au middleware, mais propre)
+// pré-vol explicite (OPTIONS) pour CORS
 analyticsV1.options("/v1/track", (req, res) => res.sendStatus(204));
 
-// acceptation silencieuse (204) des événements
+// POST silencieux (204) + envoi au hub live via analyticsBroadcast
 analyticsV1.post("/v1/track", (req, res) => {
-  // TODO: persister si besoin
-  res.sendStatus(204);
+  try {
+    const broadcast = req.app.get("analyticsBroadcast");
+    if (typeof broadcast === "function") {
+      // on passe le body tel quel : la normalisation est faite dans analyticsBroadcast
+      broadcast(req.body || {});
+    }
+    // Toujours 204 pour le tracking (on ne révèle rien au client)
+    res.set("X-Handler", "analyticsV1"); // (debug facultatif)
+    return res.sendStatus(204);
+  } catch (e) {
+    // on ne casse pas l'ingestion analytics pour une erreur interne
+    console.error("analytics v1 error:", e);
+    return res.sendStatus(204);
+  }
 });
 
+// 405 explicite pour toute autre méthode
+analyticsV1.all("/v1/track", (req, res) => {
+  res.set("Allow", "OPTIONS, POST");
+  return res.sendStatus(405);
+});
+
+// Monte le router AVANT les autres /api/analytics
 app.use("/api/analytics", analyticsV1);
 
 // ----- Error handler global (CORS & autres) -----
