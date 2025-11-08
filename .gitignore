@@ -1,25 +1,57 @@
-# Fichiers sensibles
-.env
+# ===========================================
+# 🟠 Softadastra Chat System — .gitignore
+# ===========================================
 
-# Node.js
+# 🔒 Environment files
+.env
+.env.local
+.env.production
+.env.development
+
+# 🧱 Node.js dependencies
 node_modules/
 package-lock.json
 
-# Dossiers et fichiers générés
-# db/
-# ws/
-
-# Fichiers de build ou de logs
+# 🗄️ Database and runtime data
+db/
+live/
+logs/
+*.sqlite
+*.db
 *.log
 *.out
 
-# IDE/Editeurs (si applicable)
+# 🧰 Build and cache files
+dist/
+build/
+.tmp/
+.cache/
+
+# ⚙️ Public and temporary assets
+public/
+uploads/
+__tests__/coverage/
+coverage/
+
+# 🧩 Architecture or internal drafts
+architecture/
+cmd.txt
+
+# 🧑‍💻 IDE / Editors
 .vscode/
 .idea/
 *.sublime-project
 *.sublime-workspace
 
+# 🧾 System files
+.DS_Store
+Thumbs.db
 
-cmd.txt
-public/
+# 🚫 Git internals (just in case)
+.git/
+.gitignore
+
 architecture
+# Security reports
+.gitleaks.toml
+gitleaks*.json
