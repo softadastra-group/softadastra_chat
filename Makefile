@@ -79,10 +79,5 @@ release: preflight commit ensure-clean push merge tag
 test:
 	@if [ -d build ]; then cd build && ctest --output-on-failure; else echo "ℹ️ No build dir; skipping tests"; fi
 
-update-description:
-	gh repo edit softadastra/softadastra_chat \
-	  --description "High-performance real-time messaging module powering conversations across the Softadastra Marketplace — built with Node.js, WebSockets, and secure event-based architecture." \
-	  --homepage "https://softadastra.com"
-
 changelog:
 	bash scripts/update_changelog.sh || true
