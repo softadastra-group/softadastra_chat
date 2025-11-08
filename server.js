@@ -1,3 +1,40 @@
+/**
+ * @file server.js
+ * @description
+ * Main entry point for the **Softadastra Node.js API Server**.
+ *
+ * This file bootstraps the Express application, configures CORS and middleware,
+ * mounts REST routes, and initializes multiple WebSocket hubs (Likes, Chat, Analytics)
+ * used across Softadastra’s real-time ecosystem.
+ *
+ * ## Key Responsibilities
+ * - Configure and secure the Express HTTP server with proper CORS and compression.
+ * - Serve static assets (uploads) with long-term caching.
+ * - Handle authentication for WebSocket upgrades via JWT or one-time tickets.
+ * - Expose REST API routes for messages, notifications, analytics, uploads, and feeds.
+ * - Manage three real-time WebSocket hubs:
+ *   - `/ws/likes` → real-time product likes
+ *   - `/ws/chat` → real-time messaging
+ *   - `/ws/analytics` → live user activity and funnel tracking
+ * - Gracefully handle shutdown signals (`SIGINT`, `SIGTERM`) to close sockets and HTTP.
+ *
+ * ## Environment Variables
+ * - `PORT` — HTTP listening port (default: 3001)
+ * - `HOST` — host interface (default: 127.0.0.1)
+ * - `ADMIN_ORIGINS` — comma-separated list of allowed admin origins
+ * - `JWT_SECRET` or `SECRET` — secret used for JWT and WS ticket validation
+ * - `NODE_ENV` — environment mode (`development` or `production`)
+ *
+ * ## Notes
+ * - The server uses manual WebSocket upgrade handling for fine-grained auth control.
+ * - Long-lived CORS configuration allows both local development and production HTTPS.
+ * - Static uploads are cached for 365 days with `immutable` headers for optimal performance.
+ *
+ * @author
+ * Softadastra Backend Team — https://softadastra.com
+ * @version 1.0.0
+ */
+
 require("dotenv").config();
 
 const express = require("express");
@@ -16,9 +53,9 @@ const app = express();
 const server = http.createServer(app);
 
 server.keepAliveTimeout = 1_000; // 1s
-server.headersTimeout = 5_000; // 5s (doit > keepAliveTimeout)
+server.headersTimeout = 5_000; // 5s (must be > keepAliveTimeout)
 
-// ====== Middlewares globaux ======
+// ====== Global Middlewares ======
 
 const allowlist = new Set(
   (process.env.ADMIN_ORIGINS || "http://localhost:8000,http://127.0.0.1:8000")
@@ -27,11 +64,11 @@ const allowlist = new Set(
     .filter(Boolean)
 );
 
-// wildcard *.softadastra.com en HTTPS
+// wildcard *.softadastra.com over HTTPS
 function isSoftadastraWildcard(u) {
   try {
     const url = new URL(u);
-    if (url.protocol !== "https:") return false; // prod en HTTPS
+    if (url.protocol !== "https:") return false; // production only HTTPS
     const h = url.hostname;
     return h === "softadastra.com" || h.endsWith(".softadastra.com");
   } catch {
@@ -42,18 +79,18 @@ function isSoftadastraWildcard(u) {
 function corsOrigin(origin, cb) {
   if (!origin) return cb(null, true);
 
-  // ✅ Prod : *.softadastra.com en HTTPS
+  // ✅ Production: *.softadastra.com over HTTPS
   if (isSoftadastraWildcard(origin)) return cb(null, true);
 
   try {
     const u = new URL(origin);
 
-    // ✅ Dev friendly : autorise localhost (tous ports) et 127.0.0.1
+    // ✅ Developer friendly: allow localhost and 127.0.0.1 (any port)
     if (u.hostname === "localhost" || u.hostname === "127.0.0.1") {
       return cb(null, true);
     }
 
-    const key = `${u.protocol}//${u.host}`; // host inclut le port
+    const key = `${u.protocol}//${u.host}`; // host includes port
     if (allowlist.has(key)) return cb(null, true);
   } catch {}
 
@@ -76,22 +113,23 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
 
-// (tes autres middlewares après)
+// (other middlewares)
 app.use(express.json({ limit: "2mb" }));
 app.use(cookieParser());
 app.use(compression());
 
-// ====== Fichiers statiques (images uploadées) ======
+// ====== Static Files (uploaded images) ======
 const uploadDir = path.join(__dirname, "public/uploads");
 
 app.use(
   "/uploads",
   express.static(uploadDir, {
     immutable: true,
-    maxAge: "365d", // cache long
+    maxAge: "365d", // long cache
   })
 );
-// ====== Routes API ======
+
+// ====== API Routes ======
 const messagesRoute = require("./routes/messages");
 app.use("/api/messages", messagesRoute);
 
@@ -116,18 +154,18 @@ app.use("/api/analytics", analyticsInsightsRoutes);
 const debugJwtRoutes = require("./routes/debugJwt");
 app.use("/api", debugJwtRoutes);
 
-// ✅ AJOUTE ICI
+// ✅ Added upload routes
 const uploadRoutes = require("./routes/upload");
 app.use("/api", uploadRoutes);
 
-// (garde le reste)
+// (rest)
 const meRoute = require("./routes/me");
 app.use(meRoute);
 
 const pushPublic = require("./routes/push-public");
 app.use("/api/push", pushPublic);
 
-// ====== WS (mode noServer) + upgrade manuel ======
+// ====== WS (noServer mode) + manual upgrade ======
 const wssLikes = new WebSocket.Server({
   noServer: true,
   clientTracking: true,
@@ -150,7 +188,7 @@ const hub = makeAnalyticsHub(wssAnalytics);
 app.set("analyticsLiveHub", hub);
 
 app.set("analyticsBroadcast", (evt) => {
-  // evt attendu: { type, name?, path?, anon_id?, ts? }
+  // expected event: { type, name?, path?, anon_id?, ts? }
   hub.onTrackEvent(evt);
 });
 
@@ -191,7 +229,6 @@ wssAnalytics.on("connection", async (ws) => {
     for (const r of funnelRows || []) base[r.name] = Number(r.cnt) || 0;
     ws.send(JSON.stringify({ type: "funnel_snapshot", ...base }));
 
-    // Optionnel : snapshot "active_now"
     ws.send(JSON.stringify({ type: "active_now", count: hub.getActiveNow() }));
   } catch {}
 });
@@ -217,7 +254,7 @@ wssAnalytics.on("connection", (ws) => {
   ws.send(JSON.stringify({ t: "hello", now: Date.now() }));
 });
 
-// ——— TRACKER des sockets HTTP (keep-alive) ———
+// ——— HTTP socket tracker (keep-alive) ———
 const httpSockets = new Set();
 server.on("connection", (socket) => {
   httpSockets.add(socket);
@@ -235,7 +272,6 @@ function isAllowedOrigin(origin) {
 
   const o = `${url.protocol}//${url.host}`;
 
-  // 1) Wildcard *.softadastra.com en https
   const host = url.hostname;
   if (
     url.protocol === "https:" &&
@@ -244,7 +280,6 @@ function isAllowedOrigin(origin) {
     return true;
   }
 
-  // 2) .env explicit allowlist
   const list = (
     process.env.ADMIN_ORIGINS || "http://localhost:8000,http://127.0.0.1:8000"
   )
@@ -266,7 +301,7 @@ server.on("upgrade", (req, socket, head) => {
     const u = new URL(req.url, "http://localhost");
     const pathname = u.pathname;
     const token = u.searchParams.get("token");
-    const ticket = u.searchParams.get("ticket"); // cote client ?ticket=…
+    const ticket = u.searchParams.get("ticket");
     const xuid = u.searchParams.get("x-user-id");
 
     function ok(wss) {
@@ -281,14 +316,12 @@ server.on("upgrade", (req, socket, head) => {
 
       let authed = false;
 
-      // 1) Si ?token=… est présent, essaie d'abord comme JWT PHP, sinon comme TICKET
       if (token && !authed) {
         try {
           const payload = verifyPhpJwt(token, secret);
           const role = String(payload?.role || payload?.r || "").toLowerCase();
           if (role === "admin" || role === "user") authed = true;
         } catch (_) {
-          // pas un JWT -> essaie comme ticket court
           try {
             const v = verifyWsTicket(token, secret);
             if (v && v.userId) authed = true;
@@ -296,13 +329,11 @@ server.on("upgrade", (req, socket, head) => {
         }
       }
 
-      // 2) Si ?ticket=… est présent, vérifie-le
       if (!authed && ticket) {
         const v = verifyWsTicket(ticket, secret);
         if (v && v.userId) authed = true;
       }
 
-      // 3) DEV fallback via ?x-user-id= (localhost uniquement)
       if (
         !authed &&
         process.env.NODE_ENV !== "production" &&
@@ -318,7 +349,6 @@ server.on("upgrade", (req, socket, head) => {
       return socket.destroy();
     }
 
-    // autres WS publics
     if (pathname === "/ws/likes") return ok(wssLikes);
     if (pathname === "/ws/chat") return ok(wssChat);
 
@@ -333,7 +363,7 @@ server.on("upgrade", (req, socket, head) => {
   }
 });
 
-// Upload images (réutilisé par /api/feed/photo si besoin)
+// Image uploads
 const multer = require("multer");
 const upload = multer({ dest: path.join(__dirname, "public/uploads") });
 app.post("/api/chat/upload", upload.array("images[]", 10), (req, res) => {
@@ -341,7 +371,7 @@ app.post("/api/chat/upload", upload.array("images[]", 10), (req, res) => {
   res.json({ image_urls: urls });
 });
 
-// ✅ Likes (en temps réel via WS)
+// ✅ Likes (real-time via WS)
 const likesRoutes = require("./routes/likes");
 app.use("/api", likesRoutes(wssLikes));
 
@@ -354,8 +384,8 @@ app.get("/", (req, res) => {
   });
 });
 
-// ====== Démarrage HTTP + WS ======
-const PORT = Number(process.env.PORT || 3001); // ← 3001 par défaut
+// ====== Start HTTP + WS ======
+const PORT = Number(process.env.PORT || 3001);
 const HOST = process.env.HOST || "127.0.0.1";
 
 server.listen(PORT, HOST, () => {
@@ -365,12 +395,10 @@ server.listen(PORT, HOST, () => {
   console.log(`✅ WS Analytics : ws://${HOST}:${PORT}/ws/analytics`);
 });
 
-// 🔁 Pont: route /v1/track → hub live
+// 🔁 Bridge: route /v1/track → live hub
 app.set("analyticsBroadcast", (evt) => {
-  // evt attendu: { type, path, anon_id, ts, name? } (ou ancien format { event: {...} })
   let norm;
   if (evt?.event && !evt.type) {
-    // ancien format: { t:'event', event:{...} }
     const e = evt.event || {};
     norm = {
       type: e.type || (e.name === "product_view" ? "product_view" : "event"),
@@ -389,46 +417,33 @@ app.set("analyticsBroadcast", (evt) => {
     };
   }
 
-  // 1) Nourrit le hub (active_now + diffs)
   hub.onTrackEvent(norm);
-
-  // 2) Diffuse l'event brut aux clients live
   broadcastAnalytics(wssAnalytics, { t: "event", event: norm });
 });
 
-// ====== Analytics V1 minimal (placer AVANT les autres routes analytics) ======
+// ====== Analytics V1 minimal ======
 const analyticsV1 = express.Router();
-
-// pré-vol explicite (OPTIONS) pour CORS
 analyticsV1.options("/v1/track", (req, res) => res.sendStatus(204));
-
-// POST silencieux (204) + envoi au hub live via analyticsBroadcast
 analyticsV1.post("/v1/track", (req, res) => {
   try {
     const broadcast = req.app.get("analyticsBroadcast");
     if (typeof broadcast === "function") {
       broadcast(req.body || {});
     }
-    // Toujours 204 pour le tracking (on ne révèle rien au client)
-    res.set("X-Handler", "analyticsV1"); // (debug facultatif)
+    res.set("X-Handler", "analyticsV1");
     return res.sendStatus(204);
   } catch (e) {
-    // on ne casse pas l'ingestion analytics pour une erreur interne
     console.error("analytics v1 error:", e);
     return res.sendStatus(204);
   }
 });
-
-// 405 explicite pour toute autre méthode
 analyticsV1.all("/v1/track", (req, res) => {
   res.set("Allow", "OPTIONS, POST");
   return res.sendStatus(405);
 });
-
-// Monte le router AVANT les autres /api/analytics
 app.use("/api/analytics", analyticsV1);
 
-// ----- Error handler global (CORS & autres) -----
+// ----- Global Error Handler -----
 app.use((err, req, res, next) => {
   if (String(err && err.message).startsWith("CORS:")) {
     try {
@@ -440,7 +455,7 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: "Internal server error" });
 });
 
-// ====== Arrêt propre ======
+// ====== Graceful Shutdown ======
 let shuttingDown = false;
 function closeWSS(wss, label) {
   try {
@@ -456,7 +471,7 @@ function closeWSS(wss, label) {
         } catch {}
       });
       try {
-        wss.close(() => console.log(`${label} fermé.`));
+        wss.close(() => console.log(`${label} closed.`));
       } catch {}
     }, 300).unref();
   } catch {}
@@ -465,7 +480,7 @@ function closeWSS(wss, label) {
 function shutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
-  console.log(`\n${signal} reçu, arrêt…`);
+  console.log(`\n${signal} received, shutting down…`);
   try {
     cleanupLikes();
   } catch {}
@@ -475,7 +490,7 @@ function shutdown(signal) {
   closeWSS(wssLikes, "WS Likes");
   closeWSS(wssChat, "WS Chat");
   server.close(() => {
-    console.log("HTTP fermé.");
+    console.log("HTTP closed.");
     httpSockets.forEach((s) => {
       try {
         s.destroy();

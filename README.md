@@ -1,117 +1,154 @@
 <p align="center" style="margin:0;">
   <img 
-    src="https://res.cloudinary.com/dwjbed2xb/image/upload/v1757224120/softadastra_awctjv.jpg" 
+    src="https://res.cloudinary.com/dwjbed2xb/image/upload/v1762591088/Chat-softadastra_tgcghk.png" 
     alt="Softadastra Chat Banner" 
     width="100%" 
-    style="
-      display:block;
-      height:auto;
-      max-width:900px;
-      margin:auto;
-      object-fit:cover;
-      border-radius:8px;
-    ">
+    style="display:block;height:auto;max-width:900px;margin:auto;object-fit:cover;border-radius:8px;">
 </p>
 
-<h1 align="center">Softadastra Chat</h1>
+<h1 align="center">💬 Softadastra Chat System</h1>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/C++20-Standard-blue">
-  <img src="https://img.shields.io/badge/License-MIT-green">
+  <img src="https://img.shields.io/badge/Node.js-Backend-green?logo=node.js">
+  <img src="https://img.shields.io/badge/WebSocket-Realtime-blue?logo=websocket">
+  <img src="https://img.shields.io/badge/License-MIT-orange">
+  <img src="https://img.shields.io/badge/Status-Private_Module-red">
 </p>
-# 🟠 Softadastra Chat System (Private Module)
 
-The **Softadastra Chat System** is a private, high-performance messaging module used within the [Softadastra](https://softadastra.com) ecosystem.  
-It powers real-time communication between buyers and sellers across the Softadastra Marketplace — ensuring instant, secure, and reliable messaging.
+<p align="center">
+  <strong>Private, high-performance messaging system powering real-time communication across the <a href="https://softadastra.com" target="_blank">Softadastra</a> ecosystem.</strong>
+</p>
+
+---
+
+## 🧭 Table of Contents
+
+- [Overview](#-overview)
+- [System Architecture](#-system-architecture)
+- [Database Schema](#-database-schema)
+- [Access Policy](#-access-policy)
+- [Planned API Endpoints](#-planned-api-endpoints)
+- [Contribution Workflow](#-contribution-workflow)
+- [Tech Stack](#-tech-stack)
+- [Internal References](#-internal-references)
+- [Confidentiality Notice](#-confidentiality-notice)
 
 ---
 
 ## 🚀 Overview
 
-Softadastra Chat provides a **modern, scalable chat infrastructure** built with Node.js and WebSocket technology.
+**Softadastra Chat** is a private, production-grade messaging module designed for the [Softadastra Marketplace](https://softadastra.com).  
+It connects **buyers and sellers** through a fast, encrypted, and event-driven system built with **Node.js** and **WebSockets**.
 
-### Core Features
+### ✨ Core Features
 
-- 💬 **Text messaging** between users
-- 🖼️ **Image sharing** (single or batch upload)
-- ✉️ **Mixed content** (text + image)
-- 🔔 **Real-time notifications** via WebSocket
-- 👁️ **Read receipts & status tracking**
-- 📦 **Persistent storage** for messages and threads
+- 💬 **Instant text messaging** between users
+- 🖼️ **Image uploads** — single or batch
+- ✉️ **Mixed content** (text + media)
+- 🔔 **Real-time notifications** via WS
+- 👁️ **Read receipts & presence indicators**
+- 📦 **Persistent message storage** (SQLite / MySQL)
+- 🧠 **Scalable architecture** designed for large user bases
+
+---
+
+## 🧱 System Architecture
+
+```text
+Client (SPA / Mobile)
+   ↓ WebSocket + REST
+Node.js Server (Softadastra Chat)
+   ↓
+Database Layer (SQLite / MySQL)
+   ↓
+Softadastra Core API / Notification Hub
+```
+
+Each WebSocket connection is **authenticated** via a JWT or secure ticket, and all data exchanges follow the internal event protocol used by the **Softadastra real-time infrastructure**.
 
 ---
 
 ## 🗄️ Database Schema
 
-The SQL schema is defined in [`/database/schema.sql`](database/schema.sql).
+SQL schema is defined in [`/database/schema.sql`](database/schema.sql):
 
-| Table                  | Description                                         |
-| ---------------------- | --------------------------------------------------- |
-| `chat_threads`         | Represents a conversation between two users         |
-| `chat_messages`        | Contains individual messages (text, image, or both) |
-| `chat_message_batches` | Stores multiple images per message                  |
-| `chat_message_status`  | Tracks message read/unread state                    |
-| `notifications`        | Global user notification system                     |
-
----
-
-## 🔐 Access Rules
-
-> ⚠️ **Private Repository** — Access to this project is strictly limited.
-
-| Permission                 | Description            |
-| -------------------------- | ---------------------- |
-| ✅ Code Read               | Allowed                |
-| ✅ Contribute via PR       | Allowed (after review) |
-| ❌ Production Deployment   | Not allowed            |
-| ❌ Cross-repository Access | Forbidden              |
+| Table                    | Description                                       |
+| ------------------------ | ------------------------------------------------- |
+| **chat_threads**         | Represents a conversation between two users       |
+| **chat_messages**        | Stores individual messages (text, image, or both) |
+| **chat_message_batches** | Supports multiple images per message              |
+| **chat_message_status**  | Tracks delivery and read status                   |
+| **notifications**        | Global user notification system                   |
 
 ---
 
-## 🧩 Planned Features
+## 🔐 Access Policy
 
-- [ ] `POST /chat/send` — Send message endpoint
-- [ ] `GET /chat/messages` — Retrieve messages per thread
-- [ ] `GET /chat/threads` — List user conversations
-- [ ] WebSocket / Polling — Real-time synchronization
-- [ ] Notification integration via `notifications` table
+> ⚠️ **Confidential Module** — Internal use only.
+
+| Access Type       | Permission                        |
+| ----------------- | --------------------------------- |
+| 🔓 Code Read      | Authorized contributors only      |
+| 🔄 Pull Requests  | Allowed after approval            |
+| 🚫 Deployment     | Forbidden without core validation |
+| 🚫 External Forks | Strictly prohibited               |
+
+---
+
+## 🧩 Planned API Endpoints
+
+| Endpoint             | Description                   | Status     |
+| -------------------- | ----------------------------- | ---------- |
+| `POST /chat/send`    | Send a new message            | 🔄 Planned |
+| `GET /chat/messages` | Retrieve messages in a thread | 🔄 Planned |
+| `GET /chat/threads`  | List user conversations       | 🔄 Planned |
+| `WS /chat`           | Real-time updates & presence  | ✅ Active  |
+| `WS /notifications`  | Notification stream           | ✅ Active  |
 
 ---
 
 ## 🧭 Contribution Workflow
 
-1. 🔀 Create a branch — `feature/<feature_name>`
-2. 💻 Develop and test locally
-3. 🔁 Open a **Pull Request** for review
-4. ✅ Merge only after approval by the Softadastra core team
+1. 🔀 **Create a branch** → `feature/<name>`
+2. 💻 **Implement and test** locally
+3. 🔁 **Open a Pull Request** for review
+4. ✅ **Merge** only after approval by the **Softadastra Core Team**
+
+> All commits are scanned for security via **gitleaks** and must follow the Softadastra commit conventions.
 
 ---
 
 ## 🏗️ Tech Stack
 
-- **Runtime:** Node.js
-- **Database:** SQLite / MySQL
-- **WebSocket Engine:** `ws`
-- **Utilities:** Express.js, JSON helpers, internal repositories
+| Layer                | Technology                               |
+| -------------------- | ---------------------------------------- |
+| **Runtime**          | Node.js                                  |
+| **Framework**        | Express.js                               |
+| **WebSocket Engine** | ws                                       |
+| **Database**         | SQLite / MySQL                           |
+| **Auth**             | PHP-JWT & WS Ticket Validation           |
+| **Utilities**        | Multer, CORS, Compression, Cookie Parser |
 
 ---
 
 ## 🧾 Internal References
 
-- **Main Repository:** [`softadastra`](https://github.com/softadastra)
-- **Base API Endpoint:** `https://softadastra.com/api/chat`
-- **Technical Lead:** [@GaspardKirira](https://github.com/GaspardKirira)
+- 🏢 **Main Repository:** [softadastra](https://github.com/softadastra)
+- 🌍 **Base API Endpoint:** `https://softadastra.com/api/chat`
+- 👨‍💻 **Technical Lead:** [@GaspardKirira](https://github.com/GaspardKirira)
+- 🔗 **Ecosystem:** [Softadastra Marketplace](https://softadastra.com)
 
 ---
 
 ## 🛡️ Confidentiality Notice
 
-This repository and its contents are **confidential**.  
-Unauthorized distribution, reproduction, or modification is strictly prohibited.  
-All actions within this repository are monitored and traceable.
+This repository and all its contents are **strictly confidential**.  
+Unauthorized access, reproduction, or redistribution is prohibited.  
+All commits and access events are logged and monitored.
 
 ---
 
-### 💬 Thank you for contributing to Softadastra.
-
-> Together, we’re building Africa’s next-generation commerce platform.
+<p align="center">
+  <strong>🟠 Together, we’re building Africa’s next-generation commerce infrastructure.</strong><br>
+  <em>— The Softadastra Engineering Team</em>
+</p>

@@ -1,15 +1,49 @@
-// routes/shopLocations.js
+/**
+ * @file routes/locations.js
+ * @description
+ * REST API routes for managing **shop locations** in the Softadastra ecosystem.
+ * Provides endpoints for public listings, spatial queries, and authenticated
+ * CRUD operations for each seller’s precise shop location.
+ *
+ * ## Responsibilities
+ * - Manage shop locations (create, update, delete, fetch).
+ * - Provide geospatial queries (bounding box and radius search).
+ * - Support visibility controls (public vs private).
+ * - Include debugging routes for database validation.
+ *
+ * ## Security
+ * - `authRequired` middleware protects authenticated seller routes.
+ * - Public endpoints expose only non-sensitive, public data.
+ *
+ * ## Database
+ * Table: `shop_locations`
+ * ```
+ * id, user_id, address, latitude, longitude, is_public, geo (POINT),
+ * created_at, updated_at
+ * ```
+ *
+ * @module routes/locations
+ * @see repositories/ShopLocationRepository.js — Handles all SQL queries.
+ */
+
 const express = require("express");
 const router = express.Router();
 
-const pool = require("../db/mysql"); // ✅ important pour les routes debug
+const pool = require("../db/mysql");
 const { authRequired } = require("../utils/auth-phpjwt");
 const ShopLocationRepository = require("../repositories/ShopLocationRepository");
 const repo = new ShopLocationRepository();
 
-// --------- Public ---------
-
-// GET /api/locations/public?limit=&offset=
+/**
+ * @route GET /api/locations/public
+ * @summary Returns a list of all public shop locations.
+ * @param {number} [req.query.limit=100] - Maximum number of records (1–500).
+ * @param {number} [req.query.offset=0] - Pagination offset.
+ * @returns {object[]} 200 - Array of public shop locations.
+ * @returns {object} 500 - `{ error: "Erreur chargement des localisations publiques" }`
+ * @example
+ * GET /api/locations/public?limit=20
+ */
 router.get("/locations/public", async (req, res) => {
   try {
     const { limit, offset } = req.query;
@@ -23,7 +57,21 @@ router.get("/locations/public", async (req, res) => {
   }
 });
 
-// GET /api/locations/bbox?minLat=&maxLat=&minLng=&maxLng=&limit=&offset=
+/**
+ * @route GET /api/locations/bbox
+ * @summary Returns all public shop locations within a geographic bounding box.
+ * @param {number} req.query.minLat - Minimum latitude.
+ * @param {number} req.query.maxLat - Maximum latitude.
+ * @param {number} req.query.minLng - Minimum longitude.
+ * @param {number} req.query.maxLng - Maximum longitude.
+ * @param {number} [req.query.limit=200] - Limit results (1–500).
+ * @param {number} [req.query.offset=0] - Pagination offset.
+ * @returns {object[]} 200 - Array of locations within the given box.
+ * @returns {object} 400 - `{ error: "Paramètres bbox invalides" }`
+ * @returns {object} 500 - `{ error: "Erreur bbox" }`
+ * @example
+ * GET /api/locations/bbox?minLat=-1.2&maxLat=0.5&minLng=29.8&maxLng=31.0
+ */
 router.get("/locations/bbox", async (req, res) => {
   try {
     const { minLat, maxLat, minLng, maxLng, limit, offset } = req.query;
@@ -47,7 +95,20 @@ router.get("/locations/bbox", async (req, res) => {
   }
 });
 
-// GET /api/locations/near?lat=&lng=&radiusKm=&limit=&offset=
+/**
+ * @route GET /api/locations/near
+ * @summary Returns public shop locations within a given radius (km) from coordinates.
+ * @param {number} req.query.lat - Center latitude.
+ * @param {number} req.query.lng - Center longitude.
+ * @param {number} [req.query.radiusKm=10] - Search radius in kilometers.
+ * @param {number} [req.query.limit=200] - Maximum number of results.
+ * @param {number} [req.query.offset=0] - Pagination offset.
+ * @returns {object[]} 200 - Locations sorted by ascending distance.
+ * @returns {object} 400 - `{ error: "lat/lng requis" }`
+ * @returns {object} 500 - `{ error: "Erreur recherche par rayon" }`
+ * @example
+ * GET /api/locations/near?lat=0.315&lng=32.58&radiusKm=5
+ */
 router.get("/locations/near", async (req, res) => {
   try {
     const { lat, lng, radiusKm, limit, offset } = req.query;
@@ -73,9 +134,16 @@ router.get("/locations/near", async (req, res) => {
   }
 });
 
-// --------- Authentifié (CRUD par vendeur) ---------
-
-// GET /api/shops/me/location
+/**
+ * @route GET /api/shops/me/location
+ * @middleware authRequired
+ * @summary Returns the authenticated seller’s shop location.
+ * @returns {object} 200 - The seller’s shop location.
+ * @returns {object} 404 - `{ error: "Aucune localisation" }`
+ * @returns {object} 500 - `{ error: "Erreur lecture localisation" }`
+ * @example
+ * GET /api/shops/me/location
+ */
 router.get("/shops/me/location", authRequired, async (req, res) => {
   try {
     const row = await repo.getByUserId(req.user.id);
@@ -87,7 +155,26 @@ router.get("/shops/me/location", authRequired, async (req, res) => {
   }
 });
 
-// POST /api/shops/me/location   (body: {address, latitude, longitude, is_public})
+/**
+ * @route POST /api/shops/me/location
+ * @middleware authRequired
+ * @summary Creates or updates the authenticated seller’s shop location (UPSERT).
+ * @param {string} req.body.address - Full address of the shop.
+ * @param {number} req.body.latitude - Latitude coordinate.
+ * @param {number} req.body.longitude - Longitude coordinate.
+ * @param {boolean} [req.body.is_public=false] - Visibility flag.
+ * @returns {object} 200 - `{ success: true, location: {...} }`
+ * @returns {object} 422 - `{ error: "address, latitude, longitude sont requis" }`
+ * @returns {object} 500 - `{ error: "Erreur sauvegarde localisation" }`
+ * @example
+ * POST /api/shops/me/location
+ * {
+ *   "address": "Kampala Road, Uganda",
+ *   "latitude": 0.315,
+ *   "longitude": 32.58,
+ *   "is_public": true
+ * }
+ */
 router.post("/shops/me/location", authRequired, async (req, res) => {
   try {
     const { address, latitude, longitude, is_public } = req.body || {};
@@ -112,20 +199,8 @@ router.post("/shops/me/location", authRequired, async (req, res) => {
 
     const ok = await repo.upsert(payload);
 
-    // log utile (peut être retiré en prod)
-    // console.log("[SHOP LOC UPSERT]", {
-    //   db: process.env.DB_NAME,
-    //   user_id: payload.user_id,
-    //   address: payload.address,
-    //   lat: payload.latitude,
-    //   lng: payload.longitude,
-    //   is_public: payload.is_public,
-    //   success: ok,
-    // });
-
     if (!ok) return res.json({ success: false });
 
-    // relire en base ce qui a été écrit pour renvoyer la vérité serveur
     const saved = await repo.getByUserId(req.user.id);
     return res.json({ success: true, location: saved });
   } catch (e) {
@@ -134,7 +209,15 @@ router.post("/shops/me/location", authRequired, async (req, res) => {
   }
 });
 
-// DELETE /api/shops/me/location
+/**
+ * @route DELETE /api/shops/me/location
+ * @middleware authRequired
+ * @summary Deletes the current user’s saved shop location.
+ * @returns {object} 200 - `{ success: true }`
+ * @returns {object} 500 - `{ error: "Erreur suppression localisation" }`
+ * @example
+ * DELETE /api/shops/me/location
+ */
 router.delete("/shops/me/location", authRequired, async (req, res) => {
   try {
     const ok = await repo.removeByUserId(req.user.id);
@@ -145,9 +228,14 @@ router.delete("/shops/me/location", authRequired, async (req, res) => {
   }
 });
 
-// --------- Debug (temporaire, à retirer en prod) ---------
-
-// A. Liste brute (20 dernières)
+/**
+ * @route GET /api/locations/debug/all
+ * @summary Debug endpoint — returns latest 20 rows in `shop_locations`.
+ * @returns {object} 200 - `{ db: string, rows: Array }`
+ * @returns {object} 500 - `{ error: "debug failed", message, db }`
+ * @example
+ * GET /api/locations/debug/all
+ */
 router.get("/locations/debug/all", async (req, res) => {
   try {
     const [rows] = await pool.query(
@@ -164,7 +252,15 @@ router.get("/locations/debug/all", async (req, res) => {
   }
 });
 
-// B. Votre ligne (liée au token)
+/**
+ * @route GET /api/shops/me/location/debug
+ * @middleware authRequired
+ * @summary Debug endpoint — returns current user’s location record and database name.
+ * @returns {object} 200 - `{ db, user_id, row }`
+ * @returns {object} 500 - `{ error: "debug failed" }`
+ * @example
+ * GET /api/shops/me/location/debug
+ */
 router.get("/shops/me/location/debug", authRequired, async (req, res) => {
   try {
     const row = await repo.getByUserId(req.user.id);

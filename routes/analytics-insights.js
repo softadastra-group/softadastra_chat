@@ -1,10 +1,47 @@
-// routes/analytics-insights.js
+/**
+ * @file routes/analytics.js
+ * @description
+ * REST API routes for Softadastra's analytics system — providing insights into
+ * user engagement, funnel performance, retention, and geo distribution (DAU/MAU,
+ * live activity, cohorts, top pages, countries).
+ *
+ * ## Responsibilities
+ * - Compute **DAU/MAU** and **Active Now** (last 5 minutes).
+ * - Aggregate **Top pages (24h)**.
+ * - Analyze **basic funnels**: product_view → add_to_cart → checkout_start.
+ * - Build **retention cohorts** (J+0..J+6) from sessions & pageviews.
+ * - Aggregate **country-level usage** derived from locale.
+ *
+ * ## Security
+ * - Most routes are protected with `authRequired` (JWT via PHP-compatible middleware).
+ * - Some routes are left open for testing but should be secured in production.
+ *
+ * ## Tables
+ * - `sa_pageviews(anon_id, event_time_utc, path, query, referrer, …)`
+ * - `sa_events(event_id, anon_id, event_time_utc, name, path, payload, …)`
+ * - `sa_sessions(anon_id, first_seen_utc, last_seen_utc, locale, …)`
+ *
+ * @example
+ * // Fetch analytics overview (requires Authorization header)
+ * fetch('/api/analytics/overview', {
+ *   headers: { Authorization: `Bearer ${token}` }
+ * }).then(r => r.json());
+ *
+ * @see utils/auth-phpjwt.js  Authentication middleware (JWT)
+ * @see db/mysql.js           MySQL connection pool (mysql2/promise)
+ */
+
 const express = require("express");
 const router = express.Router();
 const pool = require("../db/mysql");
 const { authRequired } = require("../utils/auth-phpjwt");
 
-// DAU/MAU + active now (visiteurs vus <5 min)
+/**
+ * GET /api/analytics/overview
+ * @summary Returns DAU series (30 days), MAU (30d), and live active users (5 min window).
+ * @security BearerAuth
+ * @returns {object} 200 - { dau: Array<{d: string, dau: number}>, mau: number, active_now: number }
+ */
 router.get("/overview", authRequired, async (req, res) => {
   const [dau] = await pool.query(
     `SELECT DATE(event_time_utc) d, COUNT(DISTINCT anon_id) dau
@@ -23,7 +60,12 @@ router.get("/overview", authRequired, async (req, res) => {
   res.json({ dau, mau: mau[0]?.mau || 0, active_now: activeNow[0]?.nowc || 0 });
 });
 
-// Top pages 24h
+/**
+ * GET /api/analytics/top-pages
+ * @summary Top 50 visited pages in the last 24 hours (views + unique visitors).
+ * @security BearerAuth
+ * @returns {object} 200 - { pages: Array<{path: string, views: number, visitors: number}> }
+ */
 router.get("/top-pages", authRequired, async (req, res) => {
   const [rows] = await pool.query(
     `SELECT path, COUNT(*) views, COUNT(DISTINCT anon_id) visitors
@@ -34,7 +76,13 @@ router.get("/top-pages", authRequired, async (req, res) => {
   res.json({ pages: rows });
 });
 
-// Funnels simples (ex: product_view -> add_to_cart -> checkout_start)
+/**
+ * GET /api/analytics/funnels/basic
+ * @summary 7-day basic funnel counts.
+ * @description Counts events for keys: product_view, add_to_cart, checkout_start.
+ * @security BearerAuth
+ * @returns {object} 200 - { product_view: number, add_to_cart: number, checkout_start: number }
+ */
 router.get("/funnels/basic", authRequired, async (req, res) => {
   const [pv] = await pool.query(
     `SELECT COUNT(*) c FROM sa_events WHERE name='product_view' AND event_time_utc >= (UTC_TIMESTAMP() - INTERVAL 7 DAY)`
@@ -52,30 +100,40 @@ router.get("/funnels/basic", authRequired, async (req, res) => {
   });
 });
 
-// Parse range -> fenêtre temporelle
+/**
+ * Lightweight range parser for quick filtering windows.
+ * @param {"24h"|"7d"|"30d"} range
+ * @returns {{start: Date, end: Date}}
+ */
 function parseRange(range = "7d") {
   const now = new Date();
   let start = new Date(now);
   if (range === "24h") start.setDate(now.getDate() - 1);
   else if (range === "30d") start.setDate(now.getDate() - 30);
-  else start.setDate(now.getDate() - 7); // 7d par défaut
+  else start.setDate(now.getDate() - 7);
   return { start, end: now };
 }
 
-// ---------- GET /api/analytics/cohorts?range=7d ----------
-// Calcule des cohortes par jour de 1ère vue (sa_sessions.first_seen_utc)
-// et la rétention J+0..J+6 basée sur sa_pageviews.event_time_utc
+/**
+ * GET /api/analytics/cohorts?range=7d
+ * @summary Builds 7 daily cohorts (D-6..D) and retention J+0..J+6 for each cohort.
+ * @description
+ * - Denominator: distinct users by `DATE(first_seen_utc)`.
+ * - Numerator: distinct users returning on J days based on pageviews.
+ * - Output `d` is an array of retention ratios per J (0..6).
+ * @returns {object} 200 - { cohorts: Array<{day: string, users: number, d: number[]}> }
+ */
 router.get(
   "/cohorts",
   /*authRequired,*/ async (req, res) => {
     try {
       const range = String(req.query.range || "7d");
-      // Fenêtre de cohortes: on prend les 7 derniers jours (cohortes)
-      const end = new Date(); // aujourd’hui
+      // Window of cohorts: last 7 days (D-6..D)
+      const end = new Date();
       const start = new Date(end);
-      start.setDate(end.getDate() - 6); // 7 cohortes (D-6 ... D)
+      start.setDate(end.getDate() - 6);
 
-      // Denominator: nombre d'utilisateurs par cohorte (distinct anon_id)
+      // Denominator: users by cohort day
       const [denoRows] = await pool.query(
         `
       SELECT DATE(first_seen_utc) AS cohort_day,
@@ -93,8 +151,7 @@ router.get(
         return res.json({ cohorts: [] });
       }
 
-      // Numerator: rétention J (join sessions->pageviews)
-      // j = DATEDIFF(date(pageview), date(first_seen))
+      // Numerator: retention J (0..6), sessions join pageviews
       const [retRows] = await pool.query(
         `
       SELECT
@@ -114,14 +171,12 @@ router.get(
         [start]
       );
 
-      // Indexer les denos
-      const denoMap = new Map(); // key: 'YYYY-MM-DD' -> users
+      const denoMap = new Map(); // 'YYYY-MM-DD' -> users
       denoRows.forEach((r) =>
         denoMap.set(String(r.cohort_day), Number(r.users))
       );
 
-      // Construire map cohort_day -> { j -> users_retained }
-      const retMap = new Map();
+      const retMap = new Map(); // cohort_day -> { j: users_retained }
       retRows.forEach((r) => {
         const day = String(r.cohort_day);
         const j = Number(r.j);
@@ -130,8 +185,6 @@ router.get(
         retMap.get(day)[j] = u;
       });
 
-      // Générer la liste des cohortes (du plus récent au plus ancien, max 7)
-      // Si une cohorte n'a pas de retention pour un j, on met 0
       const cohorts = Array.from(denoMap.keys())
         .sort((a, b) => (a < b ? 1 : -1)) // desc
         .slice(0, 7)
@@ -154,16 +207,17 @@ router.get(
   }
 );
 
-// ---------- GET /api/analytics/countries?range=7d ----------
-// Agrège par pays basé sur sa_sessions.locale (ex: 'fr', 'en-US' → 'US')
-// (si tu as un champ pays dédié en base, adapte la requête)
+/**
+ * GET /api/analytics/countries?range=7d
+ * @summary Aggregates users by country (derived from `locale`, e.g., `en-US` → `US`).
+ * @returns {object} 200 - { countries: Array<{code: string, name: string, users: number}> }
+ */
 router.get(
   "/countries",
   /*authRequired,*/ async (req, res) => {
     try {
       const { start } = parseRange(String(req.query.range || "7d"));
 
-      // On part de sa_sessions.last_seen_utc dans la fenêtre
       const [rows] = await pool.query(
         `
       SELECT
@@ -178,7 +232,11 @@ router.get(
         [start]
       );
 
-      // Map locale -> country code/name
+      /**
+       * Maps a BCP-47 locale to a country code and display name.
+       * @param {string} locale
+       * @returns {{code: string, name: string}}
+       */
       function localeToCountry(locale) {
         if (!locale) return { code: "??", name: "Unknown" };
         const str = String(locale);
