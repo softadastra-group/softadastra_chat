@@ -1,5 +1,3 @@
-
-// db/mysql.js
 const mysql = require("mysql2/promise");
 require("dotenv").config();
 
@@ -13,13 +11,12 @@ const config = {
   connectionLimit: 20,
   namedPlaceholders: true,
   timezone: "Z",
-  // ⚠️ charset = 'utf8mb4' (PAS une collation)
+  // charset = 'utf8mb4' (PAS une collation)
   charset: "utf8mb4",
 };
 
 const pool = mysql.createPool(config);
 
-// Optionnel : forcer le charset côté session
 pool
   .getConnection()
   .then(async (conn) => {

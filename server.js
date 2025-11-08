@@ -9,14 +9,12 @@ const cookieParser = require("cookie-parser");
 const compression = require("compression");
 const dbRouter = require("./routes/db");
 
-// ✅ imports auth/ticket
 const { verifyPhpJwt } = require("./utils/auth-phpjwt");
 const { verifyWsTicket } = require("./utils/ws-ticket");
 
 const app = express();
 const server = http.createServer(app);
 
-// ——— Durcir les timeouts HTTP pour accélérer l’extinction ———
 server.keepAliveTimeout = 1_000; // 1s
 server.headersTimeout = 5_000; // 5s (doit > keepAliveTimeout)
 
@@ -149,24 +147,19 @@ const wssAnalytics = new WebSocket.Server({
 const makeAnalyticsHub = require("./live/analyticsHub");
 const hub = makeAnalyticsHub(wssAnalytics);
 
-// Pour que les routes puissent pousser les events live
 app.set("analyticsLiveHub", hub);
 
-// Pont générique: une seule méthode que les routes appellent
 app.set("analyticsBroadcast", (evt) => {
   // evt attendu: { type, name?, path?, anon_id?, ts? }
   hub.onTrackEvent(evt);
 });
 
-// Snapshot minimal au connect (remonte l'active_now tout de suite)
 const pool = require("./db/mysql");
 
-// ... après makeAnalyticsHub et avant server.listen
 wssAnalytics.on("connection", async (ws) => {
   try {
     ws.send(JSON.stringify({ type: "hello", now: Date.now() }));
 
-    // --- TOP PAGES (24h) : pageview ou product_view ---
     const [topRows] = await pool.query(`
       SELECT path, SUM(views) AS views, SUM(visitors) AS visitors FROM (
         SELECT path, COUNT(*) AS views, COUNT(DISTINCT anon_id) AS visitors
@@ -187,7 +180,6 @@ wssAnalytics.on("connection", async (ws) => {
       JSON.stringify({ type: "top_pages_snapshot", rows: topRows || [] })
     );
 
-    // --- FUNNEL (7j) : product_view, add_to_cart, checkout_start (depuis sa_events)
     const [funnelRows] = await pool.query(`
       SELECT name, COUNT(*) AS cnt
       FROM sa_events
@@ -204,7 +196,6 @@ wssAnalytics.on("connection", async (ws) => {
   } catch {}
 });
 
-// utilitaire: broadcast JSON à tous les clients analytics connectés
 function broadcastAnalytics(wss, msg) {
   try {
     const s = JSON.stringify(msg);
@@ -275,8 +266,8 @@ server.on("upgrade", (req, socket, head) => {
     const u = new URL(req.url, "http://localhost");
     const pathname = u.pathname;
     const token = u.searchParams.get("token");
-    const ticket = u.searchParams.get("ticket"); // si côté client tu mets ?ticket=…
-    const xuid = u.searchParams.get("x-user-id"); // ⚠️ tirets, pas underscore
+    const ticket = u.searchParams.get("ticket"); // cote client ?ticket=…
+    const xuid = u.searchParams.get("x-user-id");
 
     function ok(wss) {
       wss.handleUpgrade(req, socket, head, (ws) =>
@@ -387,7 +378,6 @@ app.set("analyticsBroadcast", (evt) => {
       path: e.path || "/",
       anon_id: e.anon_id || null,
       ts: e.ts || Date.now(),
-      // ajoute ici d'autres champs si besoin (ua, referrer, etc.)
     };
   } else {
     norm = {
@@ -417,7 +407,6 @@ analyticsV1.post("/v1/track", (req, res) => {
   try {
     const broadcast = req.app.get("analyticsBroadcast");
     if (typeof broadcast === "function") {
-      // on passe le body tel quel : la normalisation est faite dans analyticsBroadcast
       broadcast(req.body || {});
     }
     // Toujours 204 pour le tracking (on ne révèle rien au client)
@@ -507,5 +496,4 @@ function shutdown(signal) {
 process.on("SIGINT", () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 
-// ✅ Export APRÈS définition
 module.exports = { app, server };
