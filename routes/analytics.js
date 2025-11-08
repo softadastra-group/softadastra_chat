@@ -1,4 +1,58 @@
-// routes/analytics.js
+/**
+ * @file routes/analyticsTrack.js
+ * @description
+ * REST API routes for the **Softadastra Analytics Tracking System**.
+ *
+ * This module ingests client-side tracking events (page views, product interactions,
+ * and custom events) and stores them in structured MySQL tables for further analysis.
+ * It also integrates live WebSocket broadcasting for real-time dashboards.
+ *
+ * ## Responsibilities
+ * - Track and persist analytics data from the frontend.
+ * - Maintain user sessions (via anon_id / user_id).
+ * - Compute device and browser metadata.
+ * - Emit real-time updates for analytics dashboards.
+ *
+ * ## Database Tables
+ * - **sa_sessions** → session metadata (first_seen_utc, last_seen_utc, user_id)
+ * - **sa_pageviews** → page-level metrics
+ * - **sa_events** → custom and funnel events
+ * - **sa_product_views** → product interactions
+ *
+ * ## Security
+ * - `/v1/track` — Public endpoint (no auth required, validates UUIDs)
+ * - `/ws-ticket` — Protected route (`authRequired`, PHP-JWT compatible)
+ *
+ * @module routes/analyticsTrack
+ * @see db/mysql.js - MySQL connection pool
+ * @see utils/ws-ticket.js - WebSocket ticket generator
+ * @see utils/auth-phpjwt.js - Authentication middleware
+ */
+
+/**
+ * @typedef {Object} TrackEventPayload
+ * @property {string} event_id - Unique event UUID (v4).
+ * @property {string} anon_id - Anonymous visitor UUID (v4).
+ * @property {number} [user_id] - Optional user ID if authenticated.
+ * @property {string} type - Event type: `"pageview"`, `"product_view"`, or `"event"`.
+ * @property {string} [name] - Event name if type = `"event"`.
+ * @property {string} [path] - Page or route path.
+ * @property {string} [referrer] - Referring URL.
+ * @property {Object} [payload] - Custom event data.
+ * @property {Object} [utm] - UTM parameters (source, medium, campaign).
+ * @property {Object} [viewport] - Browser viewport size.
+ * @property {number} [scroll_max_pct] - Max scroll depth percentage (0–100).
+ * @property {number} [time_in_view_ms] - Time spent on view in milliseconds.
+ * @property {number} [tz_offset_min] - Timezone offset in minutes.
+ * @property {number|string|Date} [ts] - Event timestamp.
+ */
+
+/**
+ * @typedef {Object} WsTicketResponse
+ * @property {string} ticket - Signed WebSocket token.
+ * @property {number} ttl_sec - Token lifetime in seconds.
+ */
+
 const express = require("express");
 const router = express.Router();
 const pool = require("../db/mysql");
@@ -43,7 +97,25 @@ function devBrowser(ua = "") {
 const TRUNC = (s, n) => (s == null ? null : String(s).slice(0, n));
 
 /**
- * POST /api/analytics/v1/track
+ * @route POST /api/analytics/v1/track
+ * @summary Ingests analytics events from clients.
+ * @param {TrackEventPayload} req.body - Event payload (pageview, product_view, event)
+ * @returns {object} 200 - `{ ok: true }` if stored successfully
+ * @returns {object} 400 - `{ error: "anon_id invalid" | "event_id invalid" | "type invalid" }`
+ * @returns {object} 500 - `{ error: "server" }` on internal failure
+ * @example
+ * // Example: tracking a product view
+ * fetch("/api/analytics/v1/track", {
+ *   method: "POST",
+ *   headers: { "Content-Type": "application/json" },
+ *   body: JSON.stringify({
+ *     event_id: crypto.randomUUID(),
+ *     anon_id: "b1234d77-452e-4f5a-85d0-c92ed92b72de",
+ *     type: "product_view",
+ *     path: "/products/42",
+ *     payload: { product_id: 42, price: 49.99, currency: "USD" }
+ *   })
+ * });
  */
 router.post("/v1/track", async (req, res) => {
   try {
@@ -228,6 +300,20 @@ router.post("/v1/track", async (req, res) => {
   }
 });
 
+/**
+ * @route POST /api/analytics/ws-ticket
+ * @summary Generates a short-lived WebSocket access token for analytics dashboards.
+ * @security JWT (authRequired)
+ * @returns {WsTicketResponse} 200 - JSON containing the ticket and TTL in seconds
+ * @returns {object} 401 - `{ error: "Unauthorized" }` if JWT is missing or invalid
+ * @returns {object} 500 - `{ error: "ticket_failed" }` if token creation fails
+ * @example
+ * // Example: requesting a live analytics ticket
+ * fetch("/api/analytics/ws-ticket", {
+ *   method: "POST",
+ *   headers: { Authorization: `Bearer ${token}` }
+ * }).then(res => res.json());
+ */
 router.post("/ws-ticket", authRequired, (req, res) => {
   try {
     const uid = req.user?.id;
