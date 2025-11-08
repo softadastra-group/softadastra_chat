@@ -74,8 +74,6 @@ tag:
 	git tag -a $(VERSION) -m "chore(release): $(VERSION)"
 	git push origin $(VERSION)
 
-# ✅ Important: VERSION n'est PAS une dépendance du target
-#    et ensure-clean vient APRÈS commit pour valider qu'il ne reste rien.
 release: preflight commit ensure-clean push merge tag
 
 test:

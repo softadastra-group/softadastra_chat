@@ -52,3 +52,6 @@ Thumbs.db
 .gitignore
 
 architecture
+# Security reports
+.gitleaks.toml
+gitleaks*.json
